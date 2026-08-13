@@ -1,0 +1,83 @@
+# ビルド成果物
+/kinko
+/kinko.exe
+/dist/
+/bin/
+
+# 保管庫そのもの（万一リポジトリ内で作られても追跡しない）
+*.age
+!testdata/*.age
+
+# Go
+*.out
+*.test
+
+# OS / エディタ
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# AI ツールのローカル状態
+.claude/*
+!.claude/skills/
+.codex-tmp/
+
+# 環境変数の実値。テンプレ（*.tmpl）は参照名だけなのでコミットしてよい
+.env
+.env.*
+!.env.example
+!*.tmpl
+
+### project-init: common additions
+# === OS / エディタ ===
+desktop.ini
+*.swp
+*.swo
+# === ログ・一時・スクラッチ ===
+*.log
+*.jsonl
+*.tmp
+*.bak
+*.orig
+*.rej
+# === AI ツールのローカル状態（トークンを含む可能性あり） ===
+.claude/
+# === ツール生成キャッシュ（アカウント ID 等の識別子を含み得る・追跡しない） ===
+.wrangler/
+.vercel/
+.netlify/
+.firebase/
+.turbo/
+.parcel-cache/
+.terraform/
+.serverless/
+**/supabase/.temp/
+# docsweep のローカル state / 旧世代 backup（v0.4+ は no-op だが旧版が生成し得るため常に ignore）
+.docsweep/
+# === ローカル/プライベート追記（fresh public clone から除外） ===
+*.local
+*.local.*
+*.local.md
+*.local.json
+# docs/local/ は作業ノート（plan / bugfix / pending / recap）の置き場。
+# public リポでは追跡しない。private リポでのみ tracked にしてよい（後日 grep するため）。
+# 判断軸は「秘匿情報を書くか」ではなく「リポが公開されているか」。
+docs/local/
+scripts/local/
+# === 認証情報・secrets・鍵（public へ絶対に出さない） ===
+*.pem
+*.key
+*.p12
+*.pfx
+*.ppk
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+secrets.*
+*.secret.*
+*credential*
+.netrc
+.npmrc
+.pypirc
