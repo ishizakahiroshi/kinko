@@ -1,11 +1,15 @@
 package vault
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"filippo.io/age"
 )
 
 const testPassword = "correct-horse-battery-staple"
@@ -195,5 +199,121 @@ func Test保存に失敗しても既存の保管庫を壊さない(t *testing.T)
 	got, err := reopened.Get("keep")
 	if err != nil || got != "original-value" {
 		t.Errorf("失敗後の値 = %q（err=%v）, want original-value", got, err)
+	}
+}
+
+func Test新規保管庫にはVaultIDがあり保存後も変わらない(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vault.age")
+
+	v, err := Create(path, testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := v.VaultID()
+	if !validVaultID(id) {
+		t.Fatalf("VaultID = %q, want 32桁のhex", id)
+	}
+	if err := v.Set("service", "value"); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Save(testPassword); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.VaultID() != id {
+		t.Fatalf("再読込後のVaultID = %q, want %q", reopened.VaultID(), id)
+	}
+}
+
+func Test既存format1はVaultIDなしでも開けて次回保存で付与される(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy-vault.age")
+	writeLegacyVault(t, path, testPassword)
+
+	legacy, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatalf("legacy Open: %v", err)
+	}
+	if legacy.VaultID() != "" {
+		t.Fatalf("legacy VaultID = %q, want empty", legacy.VaultID())
+	}
+	if got, err := legacy.Get("legacy"); err != nil || got != "value" {
+		t.Fatalf("legacy secret = %q, err=%v", got, err)
+	}
+
+	if err := legacy.Save(testPassword); err != nil {
+		t.Fatalf("legacy Save: %v", err)
+	}
+	reopened, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatalf("reopen migrated vault: %v", err)
+	}
+	if !validVaultID(reopened.VaultID()) {
+		t.Fatalf("migrated VaultID = %q, want 32桁のhex", reopened.VaultID())
+	}
+	if got, err := reopened.Get("legacy"); err != nil || got != "value" {
+		t.Fatalf("migrated secret = %q, err=%v", got, err)
+	}
+}
+
+func Test不正なVaultIDは開けない(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "invalid-vault.age")
+	writeEncryptedJSON(t, path, testPassword, map[string]any{
+		"version":  1,
+		"vault_id": "not-a-vault-id",
+		"secrets":  map[string]string{},
+	})
+
+	if _, err := Open(path, testPassword); err == nil {
+		t.Fatal("不正なVaultIDを含む保管庫が開けてしまった")
+	}
+}
+
+func Test将来のformatは開けない(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "future-vault.age")
+	writeEncryptedJSON(t, path, testPassword, map[string]any{
+		"version": FormatVersion + 1,
+		"secrets": map[string]string{},
+	})
+
+	if _, err := Open(path, testPassword); err == nil || !strings.Contains(err.Error(), "新しい形式") {
+		t.Fatalf("future format error = %v", err)
+	}
+}
+
+func writeLegacyVault(t *testing.T, path, password string) {
+	t.Helper()
+	writeEncryptedJSON(t, path, password, map[string]any{
+		"version": 1,
+		"secrets": map[string]string{"legacy": "value"},
+	})
+}
+
+func writeEncryptedJSON(t *testing.T, path, password string, value any) {
+	t.Helper()
+	var plain bytes.Buffer
+	if err := json.NewEncoder(&plain).Encode(value); err != nil {
+		t.Fatal(err)
+	}
+	recipient, err := age.NewScryptRecipient(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var encrypted bytes.Buffer
+	w, err := age.Encrypt(&encrypted, recipient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(plain.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encrypted.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

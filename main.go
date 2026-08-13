@@ -18,6 +18,7 @@
 //	kinko rm <名前>                               秘密を消す
 //	kinko run --env-file <テンプレ> -- <コマンド>  参照を実値へ展開して起動する
 //	kinko export <出力先>                         別ファイルへ書き出す（バックアップ）
+//	kinko unlock status                           端末解除の状態を表示する
 //
 // # 暗号は自作していない
 //
@@ -54,28 +55,36 @@ func main() {
 }
 
 func run() error {
-	if len(os.Args) < 2 {
+	args := os.Args[1:]
+	options := cli.CommandOptions{}
+	if len(args) > 0 && args[0] == "--master-password" {
+		options.MasterPasswordOnly = true
+		args = args[1:]
+	}
+	if len(args) == 0 {
 		usage()
 		return errors.New("コマンドを指定してください")
 	}
 
-	command, args := os.Args[1], os.Args[2:]
+	command, args := args[0], args[1:]
 
 	switch command {
 	case "init":
 		return cli.Init(args)
 	case "add", "set":
-		return cli.Add(args)
+		return cli.AddWithOptions(args, options)
 	case "get":
-		return cli.Get(args)
+		return cli.GetWithOptions(args, options)
 	case "list", "ls":
-		return cli.List(args)
+		return cli.ListWithOptions(args, options)
 	case "rm", "remove", "delete":
-		return cli.Remove(args)
+		return cli.RemoveWithOptions(args, options)
 	case "run":
-		return cli.Run(args)
+		return cli.RunWithOptions(args, options)
 	case "export":
-		return cli.Export(args)
+		return cli.ExportWithOptions(args, options)
+	case "unlock":
+		return cli.UnlockWithOptions(args, options)
 	case "version", "--version", "-v":
 		fmt.Println(version)
 		return nil
@@ -99,6 +108,12 @@ func usage() {
   kinko rm <名前>                                秘密を消す
   kinko run --env-file <テンプレ> -- <コマンド>   参照を実値へ展開して起動する
   kinko export <出力先>                          別ファイルへ書き出す（バックアップ）
+  kinko unlock setup [オプション]                端末解除を登録する
+  kinko unlock status                            端末解除の状態を表示する
+  kinko unlock disable [オプション]              端末解除を無効にする
+
+オプション:
+  kinko --master-password <command> ...          OS providerを使わずpasswordを入力する
 
 環境変数:
   KINKO_VAULT     保管庫の場所（既定はユーザー設定ディレクトリ配下）

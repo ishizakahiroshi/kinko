@@ -36,6 +36,11 @@ var placeholder = regexp.MustCompile(`\$\{kinko:([^}]+)\}`)
 // `env` を出力すれば当然漏れる。「ディスクに置かない」ための仕組みであって、
 // 渡した先の振る舞いまでは面倒を見られない。
 func Run(args []string) error {
+	return RunWithOptions(args, CommandOptions{})
+}
+
+// RunWithOptions は解除optionsを受けてtemplate commandを実行する。
+func RunWithOptions(args []string, options CommandOptions) error {
 	envFile := ""
 	rest := args
 	for len(rest) > 0 {
@@ -79,14 +84,11 @@ done:
 		if err != nil {
 			return err
 		}
-		password, err := ReadPassword("保管庫のパスワード: ")
+		result, err := options.openVault(path)
 		if err != nil {
 			return err
 		}
-		v, err = vault.Open(path, password)
-		if err != nil {
-			return err
-		}
+		v = result.Session.Vault()
 	}
 
 	env, err := expand(string(template), v)
@@ -193,6 +195,11 @@ func expand(template string, v *vault.Vault) ([]string, error) {
 // バックアップを別の場所（外付けディスク・別マシン）へ置くときに、
 // 日常使いのパスワードと分けられるようにするため。
 func Export(args []string) error {
+	return ExportWithOptions(args, CommandOptions{})
+}
+
+// ExportWithOptions は解除optionsを受けて保管庫をexportする。
+func ExportWithOptions(args []string, options CommandOptions) error {
 	if len(args) != 1 {
 		return errors.New("使い方: kinko export <出力先>")
 	}
@@ -206,21 +213,21 @@ func Export(args []string) error {
 	if err != nil {
 		return err
 	}
-	password, err := ReadPassword("保管庫のパスワード: ")
+	result, err := options.openVault(path)
 	if err != nil {
 		return err
 	}
-	src, err := vault.Open(path, password)
-	if err != nil {
-		return err
-	}
+	session := result.Session
+	src := session.Vault()
 
 	destPassword, err := ReadPassword("書き出し先のパスワード（空なら同じものを使う）: ")
 	if err != nil {
 		return err
 	}
 	if destPassword == "" {
-		destPassword = password
+		// 空入力は既存のexport契約に従った明示選択であり、providerから
+		// passwordを暗黙に別APIへ流用することではない。
+		destPassword = session.PasswordForExplicitExport()
 	} else if len(destPassword) < 8 {
 		return errors.New("kinko: パスワードは8文字以上にしてください")
 	}
@@ -228,6 +235,11 @@ func Export(args []string) error {
 	out, err := vault.Create(dest, destPassword)
 	if err != nil {
 		return err
+	}
+	if src.VaultID() != "" {
+		if err := out.SetVaultID(src.VaultID()); err != nil {
+			return err
+		}
 	}
 	for _, name := range src.Names() {
 		value, err := src.Get(name)

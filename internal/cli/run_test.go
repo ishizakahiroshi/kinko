@@ -1,8 +1,13 @@
 package cli
 
 import (
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ishizakahiroshi/kinko/internal/vault"
 )
 
 func TestChildEnvironmentDoesNotInheritVaultPassword(t *testing.T) {
@@ -54,6 +59,73 @@ func TestExpandRejectsEmptyEnvironmentName(t *testing.T) {
 	_, err := expand(" =value\n", nil)
 	if err == nil {
 		t.Fatal("空の環境変数名を受理してしまった")
+	}
+}
+
+func TestGetWithOptionsUsesAutomationPasswordWithoutProvider(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vault.age")
+	created, err := vault.Create(path, "synthetic-master-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := created.Set("example-service/token", "synthetic-value"); err != nil {
+		t.Fatal(err)
+	}
+	if err := created.Save("synthetic-master-password"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvVaultPath, path)
+	t.Setenv(EnvPassword, "synthetic-master-password")
+
+	oldStdout := os.Stdout
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = write
+	defer func() { os.Stdout = oldStdout }()
+
+	if err := GetWithOptions([]string{"example-service/token"}, CommandOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := write.Close(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(raw); got != "synthetic-value" {
+		t.Fatalf("stdout = %q, want synthetic value", got)
+	}
+}
+
+func TestExportPreservesVaultID(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "source.age")
+	dest := filepath.Join(t.TempDir(), "backup.age")
+	created, err := vault.Create(source, "synthetic-master-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := created.VaultID()
+	if err := created.Set("example-service/token", "synthetic-value"); err != nil {
+		t.Fatal(err)
+	}
+	if err := created.Save("synthetic-master-password"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvVaultPath, source)
+	t.Setenv(EnvPassword, "synthetic-master-password")
+
+	if err := ExportWithOptions([]string{dest}, CommandOptions{MasterPasswordOnly: true}); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := vault.Open(dest, "synthetic-master-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backup.VaultID() != id {
+		t.Fatalf("backup vault ID = %q, want %q", backup.VaultID(), id)
 	}
 }
 

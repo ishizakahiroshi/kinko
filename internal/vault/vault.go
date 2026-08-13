@@ -16,8 +16,13 @@
 //
 //	{
 //	  "version": 1,
+//	  "vault_id": "optional-32-hex-character-id",
 //	  "secrets": { "example-service/admin": "…", "package-registry/token": "…" }
 //	}
+//
+// `vault_id` is optional so an existing format 1 vault remains readable. It is
+// added on the next successful save and is used only to bind an OS unlock
+// credential to the encrypted vault contents.
 //
 // キー名も暗号化される。SOPS のような部分暗号化（キーは平文・値だけ暗号）に
 // しないのは、こちらは git へコミットしないためである。差分を読む必要がないなら、
@@ -26,6 +31,8 @@ package vault
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +59,7 @@ var ErrWrongPassword = errors.New("kinko: パスワードが違うか、保管�
 
 type document struct {
 	Version int               `json:"version"`
+	VaultID string            `json:"vault_id,omitempty"`
 	Secrets map[string]string `json:"secrets"`
 }
 
@@ -78,6 +86,9 @@ func Create(path, password string) (*Vault, error) {
 	v := &Vault{
 		path: path,
 		doc:  document{Version: FormatVersion, Secrets: map[string]string{}},
+	}
+	if _, err := v.EnsureID(); err != nil {
+		return nil, err
 	}
 	if err := v.Save(password); err != nil {
 		return nil, err
@@ -122,6 +133,9 @@ func Open(path, password string) (*Vault, error) {
 	}
 	if doc.Secrets == nil {
 		doc.Secrets = map[string]string{}
+	}
+	if doc.VaultID != "" && !validVaultID(doc.VaultID) {
+		return nil, errors.New("kinko: 保管庫の識別子が不正です")
 	}
 
 	return &Vault{path: path, doc: doc}, nil
@@ -175,6 +189,36 @@ func (v *Vault) Count() int { return len(v.doc.Secrets) }
 // Path は保管庫の場所を返す。
 func (v *Vault) Path() string { return v.path }
 
+// VaultID は、同じ保管庫かどうかを照合するための内部識別子を返す。
+//
+// 識別子は暗号化されたJSONの内側にあり、CLIの出力へ出さない。旧format 1
+// の保管庫では空文字を返す。新しい書き込み、または端末解除のsetup時に
+// EnsureIDを呼び出して付与する。
+func (v *Vault) VaultID() string { return v.doc.VaultID }
+
+// EnsureID は識別子が無い保管庫へランダムな識別子を付与する。
+func (v *Vault) EnsureID() (string, error) {
+	if v.doc.VaultID != "" {
+		return v.doc.VaultID, nil
+	}
+
+	raw := make([]byte, vaultIDBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("kinko: 保管庫の識別子を作れません: %w", err)
+	}
+	v.doc.VaultID = hex.EncodeToString(raw)
+	return v.doc.VaultID, nil
+}
+
+// SetVaultID はexportなどで論理vaultの識別子を引き継ぐ。
+func (v *Vault) SetVaultID(id string) error {
+	if !validVaultID(id) {
+		return errors.New("kinko: 保管庫の識別子が不正です")
+	}
+	v.doc.VaultID = id
+	return nil
+}
+
 // Save は保管庫を書き出す。
 //
 // # 途中で失敗しても壊さない
@@ -186,6 +230,9 @@ func (v *Vault) Path() string { return v.path }
 func (v *Vault) Save(password string) error {
 	if password == "" {
 		return errors.New("kinko: パスワードが空です")
+	}
+	if _, err := v.EnsureID(); err != nil {
+		return err
 	}
 
 	dir := filepath.Dir(v.path)
@@ -246,4 +293,14 @@ func (v *Vault) Save(password string) error {
 		return fmt.Errorf("kinko: 保管庫を置き換えられません: %w", err)
 	}
 	return nil
+}
+
+const vaultIDBytes = 16
+
+func validVaultID(id string) bool {
+	if len(id) != vaultIDBytes*2 {
+		return false
+	}
+	_, err := hex.DecodeString(id)
+	return err == nil
 }

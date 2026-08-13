@@ -3,8 +3,6 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/ishizakahiroshi/kinko/internal/vault"
 )
@@ -49,45 +47,7 @@ func Init(args []string) error {
 //	kinko add <名前>            値は入力を求める（画面に出ない）
 //	kinko add <名前> <値>       値を引数で渡す（ps と履歴に残るので非推奨）
 func Add(args []string) error {
-	if len(args) < 1 {
-		return errors.New("使い方: kinko add <名前> [値]")
-	}
-	name := args[0]
-
-	var value string
-	if len(args) >= 2 {
-		value = strings.Join(args[1:], " ")
-		fmt.Fprintln(os.Stderr,
-			"注意: 引数で渡した値はプロセス一覧とシェルの履歴に残ります。値を省略すると入力を求めます。")
-	} else {
-		v, err := ReadValue(fmt.Sprintf("%s の値: ", name))
-		if err != nil {
-			return err
-		}
-		value = v
-	}
-
-	path, err := VaultPath()
-	if err != nil {
-		return err
-	}
-	password, err := ReadPassword("保管庫のパスワード: ")
-	if err != nil {
-		return err
-	}
-	v, err := vault.Open(path, password)
-	if err != nil {
-		return err
-	}
-	if err := v.Set(name, value); err != nil {
-		return err
-	}
-	if err := v.Save(password); err != nil {
-		return err
-	}
-
-	fmt.Fprintf(os.Stderr, "保存しました: %s\n", name)
-	return nil
+	return AddWithOptions(args, CommandOptions{})
 }
 
 // Get は秘密を標準出力へ出す。
@@ -95,88 +55,15 @@ func Add(args []string) error {
 // 改行を付けないのは、`$(kinko get x)` で取り込んだときに末尾の改行が
 // 混ざらないようにするため。
 func Get(args []string) error {
-	if len(args) != 1 {
-		return errors.New("使い方: kinko get <名前>")
-	}
-
-	path, err := VaultPath()
-	if err != nil {
-		return err
-	}
-	password, err := ReadPassword("保管庫のパスワード: ")
-	if err != nil {
-		return err
-	}
-	v, err := vault.Open(path, password)
-	if err != nil {
-		return err
-	}
-
-	value, err := v.Get(args[0])
-	if err != nil {
-		return err
-	}
-	fmt.Print(value)
-	return nil
+	return GetWithOptions(args, CommandOptions{})
 }
 
 // List は名前の一覧を出す（値は出さない）。
 func List(args []string) error {
-	path, err := VaultPath()
-	if err != nil {
-		return err
-	}
-	password, err := ReadPassword("保管庫のパスワード: ")
-	if err != nil {
-		return err
-	}
-	v, err := vault.Open(path, password)
-	if err != nil {
-		return err
-	}
-
-	prefix := ""
-	if len(args) >= 1 {
-		prefix = args[0]
-	}
-
-	count := 0
-	for _, name := range v.Names() {
-		if prefix != "" && !strings.HasPrefix(name, prefix) {
-			continue
-		}
-		fmt.Println(name)
-		count++
-	}
-	fmt.Fprintf(os.Stderr, "%d 件\n", count)
-	return nil
+	return ListWithOptions(args, CommandOptions{})
 }
 
 // Remove は秘密を消す。
 func Remove(args []string) error {
-	if len(args) != 1 {
-		return errors.New("使い方: kinko rm <名前>")
-	}
-
-	path, err := VaultPath()
-	if err != nil {
-		return err
-	}
-	password, err := ReadPassword("保管庫のパスワード: ")
-	if err != nil {
-		return err
-	}
-	v, err := vault.Open(path, password)
-	if err != nil {
-		return err
-	}
-	if err := v.Delete(args[0]); err != nil {
-		return err
-	}
-	if err := v.Save(password); err != nil {
-		return err
-	}
-
-	fmt.Fprintf(os.Stderr, "削除しました: %s\n", args[0])
-	return nil
+	return RemoveWithOptions(args, CommandOptions{})
 }
