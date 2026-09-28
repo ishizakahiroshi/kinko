@@ -65,6 +65,8 @@ desktop.ini
 # 判断軸は「秘匿情報を書くか」ではなく「リポが公開されているか」。
 docs/local/
 scripts/local/
+# 監査証跡（ai-audit-prompts の report）。public リポのため追跡しない。
+/docs/ai-audit-prompts/
 # === 認証情報・secrets・鍵（public へ絶対に出さない） ===
 *.pem
 *.key
@@ -78,6 +80,19 @@ id_ed25519
 secrets.*
 *.secret.*
 *credential*
+# 例外: Credential Manager adapter の Go source（2026-09-01 owner 承認）。
+# 上の *credential* に一致して commit 7c68eca から黙って欠落し、
+# push 済みブランチが Windows でコンパイル不能になっていた（undefined: windowsCredentialManager）。
+!internal/unlock/windows_credential.go
 .netrc
 .npmrc
 .pypirc
+
+# Local video sources and renders (Drive-backed junction)
+/brag-output/
+
+# === project-init 推奨の追記（2026-09-28・templates/gitignore から不足分のみ） ===
+.commandcode/
+.cursor/
+opencode.json*
+/docs/obsidian/
