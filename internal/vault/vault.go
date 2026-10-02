@@ -26,6 +26,7 @@ package vault
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"filippo.io/age"
 )
@@ -50,6 +52,12 @@ var ErrNotFound = errors.New("kinko: 指定された名前の秘密がありま�
 // ErrWrongPassword はパスワードが違う（または壊れている）ことを表す。
 var ErrWrongPassword = errors.New("kinko: パスワードが違うか、保管庫が壊れています")
 
+// ErrConflict は読み込み後に保管庫が別の操作で更新されたことを表す。
+var ErrConflict = errors.New("kinko: 保管庫が別の操作で更新されました。もう一度実行してください")
+
+// lockTimeout は書き込み用ロックを待つ上限。
+const lockTimeout = 5 * time.Second
+
 type document struct {
 	Version int               `json:"version"`
 	Secrets map[string]string `json:"secrets"`
@@ -59,6 +67,46 @@ type document struct {
 type Vault struct {
 	path string
 	doc  document
+	// rev は読み込んだ時点のファイル内容の識別子。ファイルが無いときは空。
+	// 保存時に現在の内容と比べ、他の操作の変更を黙って上書きしない。
+	rev string
+}
+
+// revisionOf は保管庫ファイルの現在の内容の識別子を返す。ファイルが無ければ空。
+func revisionOf(path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	return sumOf(raw), nil
+}
+
+func sumOf(raw []byte) string {
+	h := sha256.Sum256(raw)
+	return fmt.Sprintf("%x", h)
+}
+
+// acquireLock は保存の間だけ保管庫への書き込みを排他する。
+func acquireLock(path string) (release func(), err error) {
+	lockPath := path + ".lock"
+	deadline := time.Now().Add(lockTimeout)
+	for {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_ = f.Close()
+			return func() { _ = os.Remove(lockPath) }, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, fmt.Errorf("kinko: ロックを取得できません: %w", err)
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("kinko: 別の操作が保管庫を使用中です（残っている場合は %s を削除してください）", lockPath)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // Create は新しい保管庫を作る。
@@ -104,6 +152,8 @@ func Open(path, password string) (*Vault, error) {
 		return nil, fmt.Errorf("kinko: 鍵を組み立てられません: %w", err)
 	}
 
+	rev := sumOf(raw)
+
 	plain, err := age.Decrypt(bytes.NewReader(raw), identity)
 	if err != nil {
 		// age は「パスワード違い」と「ファイル破損」を区別しない。
@@ -124,7 +174,7 @@ func Open(path, password string) (*Vault, error) {
 		doc.Secrets = map[string]string{}
 	}
 
-	return &Vault{path: path, doc: doc}, nil
+	return &Vault{path: path, doc: doc, rev: rev}, nil
 }
 
 // Get は秘密を1件取り出す。
@@ -212,6 +262,22 @@ func (v *Vault) Save(password string) error {
 		return fmt.Errorf("kinko: 暗号化を完了できません: %w", err)
 	}
 
+	encrypted := buf.Bytes()
+
+	// 読み込みから保存までの間に他の操作が更新していないことを、ロックの中で確かめる。
+	release, err := acquireLock(v.path)
+	if err != nil {
+		return err
+	}
+	defer release()
+	current, err := revisionOf(v.path)
+	if err != nil {
+		return fmt.Errorf("kinko: 保管庫を確認できません: %w", err)
+	}
+	if current != v.rev {
+		return ErrConflict
+	}
+
 	tmp, err := os.CreateTemp(dir, ".kinko-*.tmp")
 	if err != nil {
 		return fmt.Errorf("kinko: 一時ファイルを作れません: %w", err)
@@ -228,7 +294,7 @@ func (v *Vault) Save(password string) error {
 		_ = tmp.Close()
 		return fmt.Errorf("kinko: 一時ファイルの権限を設定できません: %w", err)
 	}
-	if _, err := io.Copy(tmp, &buf); err != nil {
+	if _, err := io.Copy(tmp, bytes.NewReader(encrypted)); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("kinko: 一時ファイルへ書けません: %w", err)
 	}
@@ -245,5 +311,6 @@ func (v *Vault) Save(password string) error {
 	if err := os.Rename(tmpName, v.path); err != nil {
 		return fmt.Errorf("kinko: 保管庫を置き換えられません: %w", err)
 	}
+	v.rev = sumOf(encrypted)
 	return nil
 }

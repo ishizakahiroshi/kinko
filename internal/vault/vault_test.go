@@ -197,3 +197,54 @@ func Test保存に失敗しても既存の保管庫を壊さない(t *testing.T)
 		t.Errorf("失敗後の値 = %q（err=%v）, want original-value", got, err)
 	}
 }
+
+// 読み込み後に別の操作が保存していた場合、古い内容で上書きせず競合として失敗する。
+func Test古い読み込みからの保存は競合として拒否される(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vault.age")
+	if _, err := Create(path, testPassword); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	a, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatalf("Open a: %v", err)
+	}
+	b, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatalf("Open b: %v", err)
+	}
+
+	if err := a.Set("first", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Save(testPassword); err != nil {
+		t.Fatalf("Save a: %v", err)
+	}
+	if err := b.Set("second", "2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Save(testPassword); !errors.Is(err, ErrConflict) {
+		t.Fatalf("Save b = %v, want ErrConflict", err)
+	}
+
+	reopened, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, err := reopened.Get("first"); err != nil {
+		t.Errorf("先の保存内容が失われている: %v", err)
+	}
+}
+
+// 既存ファイルがあるときの Create は、確認と保存の間に作られた場合も置き換えない。
+func TestCreateは保存時にも既存を置き換えない(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vault.age")
+	stale := &Vault{path: path, doc: document{Version: FormatVersion, Secrets: map[string]string{}}}
+
+	if _, err := Create(path, testPassword); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := stale.Save(testPassword); !errors.Is(err, ErrConflict) {
+		t.Fatalf("Save = %v, want ErrConflict", err)
+	}
+}
