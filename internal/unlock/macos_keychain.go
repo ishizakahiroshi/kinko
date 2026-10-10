@@ -16,10 +16,17 @@ static CFMutableDictionaryRef kinko_query(const char *account) {
 	CFMutableDictionaryRef query = CFDictionaryCreateMutable(
 		kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
 		&kCFTypeDictionaryValueCallBacks);
+	if (query == NULL) return NULL;
 	CFStringRef service = CFStringCreateWithCString(kCFAllocatorDefault,
 		kinko_keychain_service, kCFStringEncodingUTF8);
 	CFStringRef accountString = CFStringCreateWithCString(kCFAllocatorDefault,
 		account, kCFStringEncodingUTF8);
+	if (service == NULL || accountString == NULL) {
+		if (service != NULL) CFRelease(service);
+		if (accountString != NULL) CFRelease(accountString);
+		CFRelease(query);
+		return NULL;
+	}
 	CFDictionarySetValue(query, kSecClass, kSecClassGenericPassword);
 	CFDictionarySetValue(query, kSecAttrService, service);
 	CFDictionarySetValue(query, kSecAttrAccount, accountString);
@@ -54,6 +61,7 @@ static void kinko_zero_cf_data(CFMutableDataRef data) {
 int kinko_keychain_write(const char *account, const unsigned char *value,
 	 size_t valueLength, bool replace) {
 	CFMutableDictionaryRef query = kinko_query(account);
+	if (query == NULL) return errSecAllocate;
 	CFMutableDataRef data = kinko_data(value, valueLength);
 	CFMutableDictionaryRef attributes = CFDictionaryCreateMutable(
 		kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks,
@@ -106,6 +114,7 @@ int kinko_keychain_write(const char *account, const unsigned char *value,
 
 int kinko_keychain_exists(const char *account) {
 	CFMutableDictionaryRef query = kinko_query(account);
+	if (query == NULL) return errSecAllocate;
 	CFDictionarySetValue(query, kSecReturnAttributes, kCFBooleanTrue);
 	CFDictionarySetValue(query, kSecMatchLimit, kSecMatchLimitOne);
 	CFTypeRef result = NULL;
@@ -120,6 +129,7 @@ int kinko_keychain_read(const char *account, unsigned char **value,
 	*value = NULL;
 	*valueLength = 0;
 	CFMutableDictionaryRef query = kinko_query(account);
+	if (query == NULL) return errSecAllocate;
 	CFDictionarySetValue(query, kSecReturnData, kCFBooleanTrue);
 	CFDictionarySetValue(query, kSecMatchLimit, kSecMatchLimitOne);
 	CFTypeRef result = NULL;
@@ -152,6 +162,7 @@ void kinko_keychain_free(unsigned char *value, size_t valueLength) {
 
 int kinko_keychain_delete(const char *account) {
 	CFMutableDictionaryRef query = kinko_query(account);
+	if (query == NULL) return errSecAllocate;
 	OSStatus status = SecItemDelete(query);
 	CFRelease(query);
 	return (int)status;

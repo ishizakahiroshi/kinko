@@ -104,9 +104,6 @@ func OpenVault(ctx context.Context, path string, options OpenOptions) (*OpenResu
 			}
 		}
 
-		if providerErr == nil {
-			providerErr = NewProviderError(ErrorUnavailable)
-		}
 		if !IsFallbackError(providerErr) {
 			return nil, providerErr
 		}

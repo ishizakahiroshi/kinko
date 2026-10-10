@@ -2,9 +2,9 @@
 package cli
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,11 +64,11 @@ func ReadPassword(prompt string) (string, error) {
 		return string(raw), nil
 	}
 
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && line == "" {
+	line, err := readLine(os.Stdin)
+	if err != nil {
 		return "", errors.New("kinko: 標準入力からパスワードを読めません")
 	}
-	return strings.TrimRight(line, "\r\n"), nil
+	return line, nil
 }
 
 // ReadValue は秘密の値を取得する。
@@ -87,9 +87,37 @@ func ReadValue(prompt string) (string, error) {
 		return string(raw), nil
 	}
 
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && line == "" {
+	line, err := readLine(os.Stdin)
+	if err != nil {
 		return "", errors.New("kinko: 標準入力から値を読めません")
 	}
-	return strings.TrimRight(line, "\r\n"), nil
+	return line, nil
+}
+
+// readLine は1行を、byte単位の直接readで読む。
+//
+// bufio.Readerは内部バッファを埋めるため先読みする。ReadPasswordや
+// ReadValueが呼ばれるたびに新しいbufio.Readerを使い捨てにすると、非対話の
+// パイプ入力で1回目の呼び出しが2行分以上を自分のバッファへ読み込んで
+// しまい、そのReaderが破棄されると2行目以降がstdinからもバッファからも
+// 失われる。kinko initのパスワード＋確認入力のように同じprocess内で
+// ReadPasswordを連続して呼ぶ経路がこれで壊れていたため、bufioを使わない。
+func readLine(r io.Reader) (string, error) {
+	var buf []byte
+	one := make([]byte, 1)
+	for {
+		n, err := r.Read(one)
+		if n > 0 {
+			if one[0] == '\n' {
+				return strings.TrimRight(string(buf), "\r"), nil
+			}
+			buf = append(buf, one[0])
+		}
+		if err != nil {
+			if len(buf) > 0 {
+				return strings.TrimRight(string(buf), "\r"), nil
+			}
+			return "", err
+		}
+	}
 }

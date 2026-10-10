@@ -4,8 +4,9 @@ package unlock
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
+
+	"github.com/ishizakahiroshi/kinko/internal/vault"
 )
 
 const windowsCredentialPrefix = "kinko/unlock/v1/"
@@ -61,7 +62,7 @@ func (p *WindowsProvider) Setup(ctx context.Context, route Route, vaultID, passw
 		return err
 	}
 	if availability != AvailabilityAvailable {
-		return consentAvailabilityError(availability)
+		return AvailabilityToError(availability)
 	}
 	if err := ctx.Err(); err != nil {
 		return providerErrorForContext(err)
@@ -76,7 +77,7 @@ func (p *WindowsProvider) Setup(ctx context.Context, route Route, vaultID, passw
 		}
 	}
 
-	payload, err := json.Marshal(windowsCredentialPayload{
+	payload, err := json.Marshal(credentialPayload{
 		VaultID:  vaultID,
 		Password: password,
 	})
@@ -107,7 +108,7 @@ func (p *WindowsProvider) Unlock(ctx context.Context, route Route) (Credential, 
 	}
 	defer zeroBytes(payload)
 
-	var stored windowsCredentialPayload
+	var stored credentialPayload
 	if err := json.Unmarshal(payload, &stored); err != nil {
 		return Credential{}, NewProviderError(ErrorCorruptEntry)
 	}
@@ -142,9 +143,15 @@ func (p *WindowsProvider) Status(ctx context.Context, route Route) Status {
 		status.Available = availability == AvailabilityAvailable
 	}
 	configured, err := p.store.configured(route)
-	if err == nil {
-		status.Configured = configured
+	if err != nil {
+		// A transient Credential Manager read failure must not be reported as
+		// "available but not configured" — that reads as an invitation to run
+		// unlock setup again over an item that may already exist.
+		status.Available = false
+		status.Availability = AvailabilityUnavailable
+		return status
 	}
+	status.Configured = configured
 	return status
 }
 
@@ -158,17 +165,6 @@ func (p *WindowsProvider) Disable(ctx context.Context, route Route) error {
 	return p.store.delete(route)
 }
 
-type windowsCredentialPayload struct {
-	VaultID  string `json:"vault_id"`
-	Password string `json:"password"`
-}
-
-func validWindowsVaultID(id string) bool {
-	if len(id) != 32 {
-		return false
-	}
-	_, err := hex.DecodeString(id)
-	return err == nil
-}
+func validWindowsVaultID(id string) bool { return vault.ValidID(id) }
 
 func windowsTarget(route Route) string { return windowsCredentialPrefix + route.Key }

@@ -42,6 +42,14 @@ var version = "dev"
 
 func main() {
 	if err := run(); err != nil {
+		var childErr *cli.ChildExitError
+		if errors.As(err, &childErr) {
+			// 子プロセスは既に自分のstdout/stderrへ出力し終えている。
+			// ここで追加のメッセージを出すと、子と同じ終了コードで
+			// 終わるという契約に余計な行が混ざる。
+			os.Exit(childErr.Code)
+		}
+
 		// 使い方の誤りと、保管庫の状態による失敗を、同じ形で出す。
 		// 利用者にとってはどちらも「次に何をすればいいか」が知りたいだけなので、
 		// 種類ごとに書式を変えない。

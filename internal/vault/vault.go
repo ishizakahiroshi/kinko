@@ -143,6 +143,7 @@ func Open(path, password string) (*Vault, error) {
 
 // Get は秘密を1件取り出す。
 func (v *Vault) Get(name string) (string, error) {
+	name = strings.TrimSpace(name)
 	value, ok := v.doc.Secrets[name]
 	if !ok {
 		return "", fmt.Errorf("%w: %s", ErrNotFound, name)
@@ -162,6 +163,7 @@ func (v *Vault) Set(name, value string) error {
 
 // Delete は秘密を消す。
 func (v *Vault) Delete(name string) error {
+	name = strings.TrimSpace(name)
 	if _, ok := v.doc.Secrets[name]; !ok {
 		return fmt.Errorf("%w: %s", ErrNotFound, name)
 	}
@@ -297,7 +299,13 @@ func (v *Vault) Save(password string) error {
 
 const vaultIDBytes = 16
 
-func validVaultID(id string) bool {
+func validVaultID(id string) bool { return ValidID(id) }
+
+// ValidID reports whether id has the shape kinko uses for vault_id: a
+// lowercase or uppercase 32-character hex string. OS unlock providers use
+// this instead of keeping their own copy so the format only needs updating
+// in one place.
+func ValidID(id string) bool {
 	if len(id) != vaultIDBytes*2 {
 		return false
 	}

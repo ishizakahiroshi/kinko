@@ -7,8 +7,12 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 )
+
+const userConsentVerifierClassName = "Windows.Security.Credentials.UI.UserConsentVerifier"
+const consentRequestMessage = "kinko の保管庫を開くには端末の認証が必要です"
 
 const (
 	consentVerified                 = 0
@@ -25,6 +29,34 @@ const (
 	roInitMultithreaded             = 1
 	gaRoot                          = 2
 	windowsHelloMinimumBuild uint32 = 22000
+)
+
+// COM vtable slots used by comCall. Verified against the Windows SDK
+// 10.0.26100.0 headers (winrt/windows.security.credentials.ui.h,
+// winrt/asyncinfo.h, um/UserConsentVerifierInterop.h).
+//
+// IAsyncOperation<T> derives from IInspectable directly, and IAsyncInfo is a
+// separate interface reached through QueryInterface. The two layouts share
+// slots 0-5 but diverge after that, so a slot must only ever be used on the
+// pointer of the interface it belongs to. Slot 8 is GetResults on
+// IAsyncOperation<T> and get_ErrorCode on IAsyncInfo.
+const (
+	// IUnknown: 0 QueryInterface, 1 AddRef, 2 Release.
+	vtblQueryInterface = 0
+	vtblRelease        = 2
+	// IInspectable: 3 GetIids, 4 GetRuntimeClassName, 5 GetTrustLevel.
+
+	// IAsyncOperation<T>: 6 put_Completed, 7 get_Completed, 8 GetResults.
+	// The vtable ends at slot 8.
+	vtblAsyncOperationGetResults = 8
+	// IAsyncInfo: 6 get_Id, 7 get_Status, 8 get_ErrorCode, 9 Cancel, 10 Close.
+	vtblAsyncInfoGetStatus = 7
+	vtblAsyncInfoCancel    = 9
+	// IUserConsentVerifierStatics: 6 CheckAvailabilityAsync,
+	// 7 RequestVerificationAsync.
+	vtblStaticsCheckAvailabilityAsync = 6
+	// IUserConsentVerifierInterop: 6 RequestVerificationForWindowAsync.
+	vtblInteropRequestVerificationForWindowAsync = 6
 )
 
 var (
@@ -140,34 +172,14 @@ func (v windowsConsentVerifier) availability(ctx context.Context) (Availability,
 		defer procRoUninitialize.Call()
 	}
 
-	class, err := syscall.UTF16PtrFromString("Windows.Security.Credentials.UI.UserConsentVerifier")
+	statics, err := roGetActivationFactory(userConsentVerifierClassName, &iidUserConsentVerifierStatics)
 	if err != nil {
-		return AvailabilityUnavailable, NewProviderError(ErrorUnavailable)
-	}
-	var classID uintptr
-	ret, _, _ := procWindowsCreateString.Call(
-		uintptr(unsafe.Pointer(class)),
-		uintptr(len([]rune("Windows.Security.Credentials.UI.UserConsentVerifier"))),
-		uintptr(unsafe.Pointer(&classID)),
-	)
-	if ret != 0 || classID == 0 {
-		return AvailabilityUnsupported, NewProviderError(ErrorUnsupported)
-	}
-	defer procWindowsDeleteString.Call(classID)
-
-	var statics unsafe.Pointer
-	ret, _, _ = procRoGetActivationFactory.Call(
-		classID,
-		uintptr(unsafe.Pointer(&iidUserConsentVerifierStatics)),
-		uintptr(unsafe.Pointer(&statics)),
-	)
-	if ret != 0 || statics == nil {
-		return AvailabilityUnsupported, NewProviderError(ErrorUnsupported)
+		return AvailabilityUnsupported, err
 	}
 	defer comRelease(statics)
 
 	var async unsafe.Pointer
-	ret, _ = comCall(statics, 6, uintptr(unsafe.Pointer(&async)))
+	ret, _ := comCall(statics, vtblStaticsCheckAvailabilityAsync, uintptr(unsafe.Pointer(&async)))
 	if int32(ret) != 0 || async == nil {
 		return AvailabilityUnavailable, NewProviderError(ErrorUnavailable)
 	}
@@ -193,7 +205,7 @@ func (v windowsConsentVerifier) verify(ctx context.Context) error {
 		return err
 	}
 	if availability != AvailabilityAvailable {
-		return consentAvailabilityError(availability)
+		return AvailabilityToError(availability)
 	}
 
 	runtime.LockOSThread()
@@ -209,52 +221,23 @@ func (v windowsConsentVerifier) verify(ctx context.Context) error {
 		defer procRoUninitialize.Call()
 	}
 
-	class, err := syscall.UTF16PtrFromString("Windows.Security.Credentials.UI.UserConsentVerifier")
+	interop, err := roGetActivationFactory(userConsentVerifierClassName, &iidUserConsentVerifierInterop)
 	if err != nil {
-		return NewProviderError(ErrorUnavailable)
-	}
-	classID := uintptr(0)
-	ret, _, _ := procWindowsCreateString.Call(
-		uintptr(unsafe.Pointer(class)),
-		uintptr(len([]rune("Windows.Security.Credentials.UI.UserConsentVerifier"))),
-		uintptr(unsafe.Pointer(&classID)),
-	)
-	if ret != 0 || classID == 0 {
-		return NewProviderError(ErrorUnsupported)
-	}
-	defer procWindowsDeleteString.Call(classID)
-
-	var interop unsafe.Pointer
-	ret, _, _ = procRoGetActivationFactory.Call(
-		classID,
-		uintptr(unsafe.Pointer(&iidUserConsentVerifierInterop)),
-		uintptr(unsafe.Pointer(&interop)),
-	)
-	if ret != 0 || interop == nil {
-		return NewProviderError(ErrorUnsupported)
+		return err
 	}
 	defer comRelease(interop)
 
-	message, err := syscall.UTF16PtrFromString("kinko の保管庫を開くには端末の認証が必要です")
+	messageID, err := createHString(consentRequestMessage)
 	if err != nil {
-		return NewProviderError(ErrorUnavailable)
-	}
-	var messageID uintptr
-	ret, _, _ = procWindowsCreateString.Call(
-		uintptr(unsafe.Pointer(message)),
-		uintptr(len([]rune("kinko の保管庫を開くには端末の認証が必要です"))),
-		uintptr(unsafe.Pointer(&messageID)),
-	)
-	if ret != 0 || messageID == 0 {
-		return NewProviderError(ErrorUnavailable)
+		return err
 	}
 	defer procWindowsDeleteString.Call(messageID)
 
 	return requestWithActiveWindow(ctx, activeWindow, func(hwnd uintptr) error {
 		var async unsafe.Pointer
-		ret, _ = comCall(
+		ret, _ := comCall(
 			interop,
-			6,
+			vtblInteropRequestVerificationForWindowAsync,
 			hwnd,
 			messageID,
 			uintptr(unsafe.Pointer(&iidAsyncOperationUserConsentVerificationResult)),
@@ -284,7 +267,7 @@ func waitForConsent(ctx context.Context, async unsafe.Pointer) error {
 
 func waitForAsyncResult(ctx context.Context, async unsafe.Pointer) (uint32, error) {
 	var info unsafe.Pointer
-	ret, _ := comCall(async, 0, uintptr(unsafe.Pointer(&iidAsyncInfo)), uintptr(unsafe.Pointer(&info)))
+	ret, _ := comCall(async, vtblQueryInterface, uintptr(unsafe.Pointer(&iidAsyncInfo)), uintptr(unsafe.Pointer(&info)))
 	if int32(ret) != 0 || info == nil {
 		return 0, NewProviderError(ErrorUnavailable)
 	}
@@ -292,7 +275,7 @@ func waitForAsyncResult(ctx context.Context, async unsafe.Pointer) (uint32, erro
 
 	for {
 		var status uint32
-		ret, _ := comCall(info, 7, uintptr(unsafe.Pointer(&status)))
+		ret, _ := comCall(info, vtblAsyncInfoGetStatus, uintptr(unsafe.Pointer(&status)))
 		if int32(ret) != 0 {
 			return 0, NewProviderError(ErrorUnavailable)
 		}
@@ -300,13 +283,20 @@ func waitForAsyncResult(ctx context.Context, async unsafe.Pointer) (uint32, erro
 		case consentPending:
 			select {
 			case <-ctx.Done():
-				_, _ = comCall(info, 9)
+				_, _ = comCall(info, vtblAsyncInfoCancel)
 				return 0, providerErrorForContext(ctx.Err())
 			case <-time.After(10 * time.Millisecond):
 			}
 		case consentCompleted:
+			// GetResults is read from the IAsyncOperation<T> pointer (async),
+			// not from the IAsyncInfo pointer (info) obtained above. On the
+			// former slot 8 is GetResults and yields the result enum; on the
+			// latter slot 8 would be get_ErrorCode. The 2026-08-23 audit
+			// confused the two layouts and moved this call to slot 13, which
+			// lies past the end of the 9-entry vtable and crashed every
+			// unlock command with an access violation (0xc0000005).
 			var result uint32
-			ret, _ := comCall(async, 8, uintptr(unsafe.Pointer(&result)))
+			ret, _ := comCall(async, vtblAsyncOperationGetResults, uintptr(unsafe.Pointer(&result)))
 			if int32(ret) != 0 {
 				return 0, NewProviderError(ErrorUnavailable)
 			}
@@ -353,20 +343,58 @@ func consentAvailability(result uint32) Availability {
 	}
 }
 
-func consentAvailabilityError(availability Availability) error {
-	switch availability {
-	case AvailabilityAvailable:
-		return nil
-	case AvailabilityNotConfigured:
-		return NewProviderError(ErrorNotConfigured)
-	case AvailabilityDeviceNotPresent, AvailabilityDisabledByPolicy,
-		AvailabilityNoActiveWindow, AvailabilityUnsupported:
-		return NewProviderError(ErrorUnsupported)
-	case AvailabilityDeviceBusy:
-		return NewProviderError(ErrorDeviceBusy)
-	default:
-		return NewProviderError(ErrorUnavailable)
+// hstringLength returns the UTF-16 code unit count WindowsCreateString
+// expects. len([]rune(s)) undercounts any character outside the BMP (it
+// becomes one rune but two UTF-16 code units there), which would truncate
+// the HSTRING. Every string this adapter currently builds is BMP-only, but
+// computing the count this way keeps a future message edit from silently
+// reintroducing the bug.
+func hstringLength(s string) int {
+	return len(utf16.Encode([]rune(s)))
+}
+
+// createHString wraps WindowsCreateString for a single string, releasing
+// callers from repeating the UTF16PtrFromString + length + error-check
+// sequence at each call site.
+func createHString(s string) (uintptr, error) {
+	ptr, err := syscall.UTF16PtrFromString(s)
+	if err != nil {
+		return 0, NewProviderError(ErrorUnavailable)
 	}
+	var id uintptr
+	ret, _, _ := procWindowsCreateString.Call(
+		uintptr(unsafe.Pointer(ptr)),
+		uintptr(hstringLength(s)),
+		uintptr(unsafe.Pointer(&id)),
+	)
+	if ret != 0 || id == 0 {
+		return 0, NewProviderError(ErrorUnsupported)
+	}
+	return id, nil
+}
+
+// roGetActivationFactory creates the HSTRING for className, asks combase
+// for the activation factory implementing iid, and always frees the HSTRING
+// before returning. availability() and verify() both activate the same
+// UserConsentVerifier runtime class (against different interfaces), so this
+// is the one place that sequence is written.
+func roGetActivationFactory(className string, iid *windowsGUID) (unsafe.Pointer, error) {
+	classID, err := createHString(className)
+	if err != nil {
+		return nil, err
+	}
+	defer procWindowsDeleteString.Call(classID)
+
+	var factory unsafe.Pointer
+	ret, _, _ := procRoGetActivationFactory.Call(
+		classID,
+		uintptr(unsafe.Pointer(iid)),
+		uintptr(unsafe.Pointer(&factory)),
+	)
+	if ret != 0 || factory == nil {
+		return nil, NewProviderError(ErrorUnsupported)
+	}
+	return factory, nil
 }
 
 func initializeCOM() (initialized, ok bool) {
@@ -450,5 +478,5 @@ func comRelease(instance unsafe.Pointer) {
 	if instance == nil {
 		return
 	}
-	_, _ = comCall(instance, 2)
+	_, _ = comCall(instance, vtblRelease)
 }

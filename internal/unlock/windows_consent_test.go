@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestConsentResultErrorsAreSafe(t *testing.T) {
@@ -51,7 +52,7 @@ func TestConsentAvailabilityMapsPreRequestStates(t *testing.T) {
 			if got := consentAvailability(result); got != want.availability {
 				t.Fatalf("availability = %q, want %q", got, want.availability)
 			}
-			err := consentAvailabilityError(want.availability)
+			err := AvailabilityToError(want.availability)
 			if got := IsFallbackError(err); got != want.fallback {
 				t.Fatalf("fallback = %t, want %t for %q", got, want.fallback, want.availability)
 			}
@@ -109,4 +110,43 @@ func TestWindowsVaultIDValidation(t *testing.T) {
 			t.Fatalf("invalid vault ID accepted: %q", id)
 		}
 	}
+}
+
+// TestWindowsConsentAvailabilityRealCallReturnsClassifiedResult drives the
+// real UserConsentVerifier.CheckAvailabilityAsync path once. It shows no OS
+// UI and touches no credential. The point is not the answer but coming back
+// at all: a wrong vtable slot in waitForAsyncResult does not produce a wrong
+// value, it calls a garbage function pointer and the test binary dies with
+// an access violation (2026-09-01: slot 13 instead of 8 did exactly that on
+// every unlock command, and no fake-provider test could see it).
+func TestWindowsConsentAvailabilityRealCallReturnsClassifiedResult(t *testing.T) {
+	build, err := windowsBuildNumber()
+	if err != nil || !windowsBuildSupported(build) {
+		t.Skipf("build %d は Hello interop の対象外（%d 未満）のため実 COM 経路を通らない", build, windowsHelloMinimumBuild)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	availability, err := windowsConsentVerifier{}.availability(ctx)
+	if err != nil {
+		kind, ok := ProviderErrorKindOf(err)
+		if !ok {
+			t.Fatalf("availability error = %v, want a classified provider error", err)
+		}
+		t.Logf("availability = %q with classified error %q (COM/WinRT not usable on this host)", availability, kind)
+		return
+	}
+	known := map[Availability]bool{
+		AvailabilityAvailable:        true,
+		AvailabilityDeviceNotPresent: true,
+		AvailabilityNotConfigured:    true,
+		AvailabilityDisabledByPolicy: true,
+		AvailabilityDeviceBusy:       true,
+		AvailabilityNoActiveWindow:   true,
+		AvailabilityUnavailable:      true,
+	}
+	if !known[availability] {
+		t.Fatalf("availability = %q, want a known value", availability)
+	}
+	t.Logf("availability = %q", availability)
 }

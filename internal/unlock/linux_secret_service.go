@@ -230,6 +230,17 @@ func openSecretService(ctx context.Context) (*dbus.Conn, dbus.BusObject, dbus.Ob
 	if err != nil {
 		return nil, nil, "", NewProviderError(ErrorUnavailable)
 	}
+	// SessionBusPrivateNoAutoStartup returns an unauthenticated connection.
+	// Without Auth+Hello, godbus's read worker never starts and every call
+	// on this conn blocks until the context deadline instead of failing fast.
+	if err := conn.Auth(nil); err != nil {
+		conn.Close()
+		return nil, nil, "", NewProviderError(ErrorUnavailable)
+	}
+	if err := conn.Hello(); err != nil {
+		conn.Close()
+		return nil, nil, "", NewProviderError(ErrorUnavailable)
+	}
 	root := conn.Object(secretServiceName, secretServicePath)
 	var output dbus.Variant
 	var session dbus.ObjectPath

@@ -124,6 +124,29 @@ func Test既存の保管庫を上書きしない(t *testing.T) {
 	}
 }
 
+func TestSetした名前の前後空白はGetとDeleteでも同じ扱い(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vault.age")
+
+	v, err := Create(path, testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Setは前後の空白をtrimして保存する。Get/Deleteが同じtrimをしないと、
+	// 追加した名前そのままの綴りでは取り出せない・消せないという非対称が起きる。
+	if err := v.Set(" token ", "value"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := v.Get(" token "); err != nil || got != "value" {
+		t.Fatalf("Get(前後空白あり) = %q, err=%v, want value", got, err)
+	}
+	if err := v.Delete(" token "); err != nil {
+		t.Fatalf("Delete(前後空白あり): %v", err)
+	}
+	if _, err := v.Get("token"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Delete後もGetできてしまった: err=%v", err)
+	}
+}
+
 func Test無い名前はErrNotFound(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vault.age")
 

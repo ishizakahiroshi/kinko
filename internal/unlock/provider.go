@@ -120,6 +120,13 @@ type Credential struct {
 	VaultID  string
 }
 
+// credentialPayload はOS credential storeへ書き込むJSON本体。3プラットフォーム
+// のadapterが同じ形を個別定義していたため、ここへ1本化する。
+type credentialPayload struct {
+	VaultID  string `json:"vault_id"`
+	Password string `json:"password"`
+}
+
 // Availability はproviderの利用可否を、statusへ安全に表示できる値で表す。
 // provider固有のOS errorや内部IDはここへ持ち込まない。
 type Availability string
@@ -155,6 +162,32 @@ const (
 	BindingSessionProtected VerificationBinding = "session-protected"
 	BindingNone             VerificationBinding = "none"
 )
+
+// AvailabilityToError はcallerがそのavailabilityでは進めないと判断した後に
+// 返すべきProviderErrorへ写像する。Windows adapterとCLI側で別々に持っていた
+// 同型の写像を1本化したもの。AvailabilityAvailableはこの関数を呼ぶ前に
+// callerが別処理へ進んでいる前提だが、安全のためnilを返す。
+func AvailabilityToError(availability Availability) error {
+	switch availability {
+	case AvailabilityAvailable:
+		return nil
+	case AvailabilityNotConfigured:
+		return NewProviderError(ErrorNotConfigured)
+	case AvailabilityDeviceNotPresent, AvailabilityDisabledByPolicy, AvailabilityUnsupported:
+		return NewProviderError(ErrorUnsupported)
+	case AvailabilityDeviceBusy:
+		return NewProviderError(ErrorDeviceBusy)
+	case AvailabilityTimeout:
+		return NewProviderError(ErrorTimeout)
+	default:
+		// AvailabilityNoActiveWindow lands here deliberately: missing an owner
+		// window is a transient per-call condition, not a permanent verdict
+		// that this environment cannot use the provider, so it must stay in
+		// the fallback-permitted class (ErrorUnavailable) instead of
+		// ErrorUnsupported.
+		return NewProviderError(ErrorUnavailable)
+	}
+}
 
 // Provider はOS固有の端末解除adapterが実装する共通interfaceである。
 type Provider interface {

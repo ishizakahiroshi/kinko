@@ -92,6 +92,7 @@ OS credentialへの保存、各OSの実機acceptance、同期、正式なrelease
 
 - OS adapter は capability gate または availability 判定を、credential store の read/write/delete より先に通す。既知の unsupported 状態では後続の native API と credential store を呼ばない
 - cgo / FFI を跨ぐ secret の一時コピーは zeroable storage に置き、所有権境界ごとに release 前の消去を確認する。source contract test は実機 acceptance の代わりにしない
+- fake provider の test は実 ABI（vtable slot、IID、呼び出し規約）の誤りを検出できない。UI を出さない実 API 呼び出しの smoke test を対象 OS の CI runner で毎回実行する
 - cross-build と test compile は buildability の証明であり、OS実機 acceptance、release readiness、production release の証明とは分ける
 - 敵対レビューの finding は plan の文章だけで閉じず、コード・回帰 test・provenance・closeout を再確認してから完了扱いにする
 

@@ -182,12 +182,8 @@ func RemoveWithOptions(args []string, options CommandOptions) error {
 	return nil
 }
 
-// Unlock は端末解除providerのlifecycle commandを処理する。
-func Unlock(args []string) error {
-	return UnlockWithOptions(args, CommandOptions{})
-}
-
-// UnlockWithOptions はproviderとdeadlineを差し替え可能なunlock lifecycle command。
+// UnlockWithOptions は端末解除providerのlifecycle commandを処理する。
+// providerとdeadlineを差し替え可能。
 func UnlockWithOptions(args []string, options CommandOptions) error {
 	if len(args) == 0 {
 		return errors.New("使い方: kinko unlock <setup|status|disable> [オプション]")
@@ -238,10 +234,6 @@ func parseUnlockFlags(args []string, allowReplace bool) (unlockFlags, error) {
 		}
 	}
 	return flags, nil
-}
-
-func unlockSetup(args []string, provider unlockservice.Provider) error {
-	return unlockSetupWithOptions(args, provider, CommandOptions{})
 }
 
 func unlockSetupWithOptions(args []string, provider unlockservice.Provider, options CommandOptions) error {
@@ -299,10 +291,6 @@ func unlockSetupWithOptions(args []string, provider unlockservice.Provider, opti
 	return nil
 }
 
-func unlockStatus(args []string, provider unlockservice.Provider) error {
-	return unlockStatusWithOptions(args, provider, CommandOptions{})
-}
-
 func unlockStatusWithOptions(args []string, provider unlockservice.Provider, options CommandOptions) error {
 	if len(args) != 0 {
 		return fmt.Errorf("使い方: kinko unlock status")
@@ -317,10 +305,6 @@ func unlockStatusWithOptions(args []string, provider unlockservice.Provider, opt
 	}
 	printUnlockStatus(status)
 	return nil
-}
-
-func unlockDisable(args []string, provider unlockservice.Provider) error {
-	return unlockDisableWithOptions(args, provider, CommandOptions{})
 }
 
 func unlockDisableWithOptions(args []string, provider unlockservice.Provider, options CommandOptions) error {
@@ -369,20 +353,11 @@ func printUnlockStatus(status unlockservice.Status) {
 	fmt.Printf("available: %t\n", status.Available)
 }
 
+// providerStatusError はunlock package共通のAvailabilityToErrorへ委譲する。
+// 以前はこことwindows_consent.goに同型の写像が別々にあり、NoActiveWindowの
+// 分類だけが食い違っていた（両方とも同じ結論に固定するにはunlock側1本化が必要）。
 func providerStatusError(status unlockservice.Status) error {
-	switch status.Availability {
-	case unlockservice.AvailabilityNotConfigured:
-		return unlockservice.NewProviderError(unlockservice.ErrorNotConfigured)
-	case unlockservice.AvailabilityDeviceNotPresent, unlockservice.AvailabilityDisabledByPolicy,
-		unlockservice.AvailabilityUnsupported, unlockservice.AvailabilityNoActiveWindow:
-		return unlockservice.NewProviderError(unlockservice.ErrorUnsupported)
-	case unlockservice.AvailabilityDeviceBusy:
-		return unlockservice.NewProviderError(unlockservice.ErrorDeviceBusy)
-	case unlockservice.AvailabilityTimeout:
-		return unlockservice.NewProviderError(unlockservice.ErrorTimeout)
-	default:
-		return unlockservice.NewProviderError(unlockservice.ErrorUnavailable)
-	}
+	return unlockservice.AvailabilityToError(status.Availability)
 }
 
 func confirm(prompt string) (bool, error) {
