@@ -43,6 +43,10 @@ jobs:
       - name: go test
         run: go test -count=1 ./...
 
+      - name: go test race (Ubuntu)
+        if: runner.os == 'Linux'
+        run: go test -race -count=1 ./...
+
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest

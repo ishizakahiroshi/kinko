@@ -94,9 +94,15 @@ func run() error {
 	case "unlock":
 		return cli.UnlockWithOptions(args, options)
 	case "version", "--version", "-v":
+		if len(args) != 0 {
+			return errors.New("使い方: kinko version")
+		}
 		fmt.Println(version)
 		return nil
 	case "help", "--help", "-h":
+		if len(args) != 0 {
+			return errors.New("使い方: kinko help")
+		}
 		usage()
 		return nil
 	default:

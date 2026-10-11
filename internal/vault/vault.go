@@ -32,6 +32,7 @@ package vault
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -58,15 +59,19 @@ var ErrNotFound = errors.New("kinko: 指定された名前の秘密がありま�
 var ErrWrongPassword = errors.New("kinko: パスワードが違うか、保管庫が壊れています")
 
 type document struct {
-	Version int               `json:"version"`
-	VaultID string            `json:"vault_id,omitempty"`
-	Secrets map[string]string `json:"secrets"`
+	Version int                        `json:"version"`
+	VaultID string                     `json:"vault_id,omitempty"`
+	Secrets map[string]string          `json:"secrets"`
+	Extra   map[string]json.RawMessage `json:"-"`
 }
 
-// Vault は開いている保管庫。
+// Vault は開いている保管庫。1つの値の同時 goroutine 利用はサポートしない。
+// 別の Open / process 間の保存は lock と ciphertext snapshot で調停する。
 type Vault struct {
-	path string
-	doc  document
+	path     string
+	doc      document
+	snapshot [sha256.Size]byte
+	loaded   bool
 }
 
 // Create は新しい保管庫を作る。
@@ -77,14 +82,13 @@ func Create(path, password string) (*Vault, error) {
 	if password == "" {
 		return nil, errors.New("kinko: パスワードが空です")
 	}
-	if _, err := os.Stat(path); err == nil {
-		return nil, fmt.Errorf("kinko: 保管庫が既にあります: %s", path)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("kinko: 保管庫を確認できません: %w", err)
+	canonical, err := canonicalPath(path, true)
+	if err != nil {
+		return nil, err
 	}
 
 	v := &Vault{
-		path: path,
+		path: canonical,
 		doc:  document{Version: FormatVersion, Secrets: map[string]string{}},
 	}
 	if _, err := v.EnsureID(); err != nil {
@@ -102,7 +106,11 @@ func Open(path, password string) (*Vault, error) {
 		return nil, errors.New("kinko: パスワードが空です")
 	}
 
-	raw, err := os.ReadFile(path)
+	canonical, err := canonicalPath(path, false)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(canonical)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("kinko: 保管庫がありません（kinko init で作成してください）: %s", path)
@@ -122,23 +130,30 @@ func Open(path, password string) (*Vault, error) {
 		return nil, ErrWrongPassword
 	}
 
+	// A second Decode must reach authenticated EOF, including whitespace across
+	// age chunks. A single Decode can return before the final authentication tag.
+	decoder := json.NewDecoder(plain)
 	var doc document
-	if err := json.NewDecoder(plain).Decode(&doc); err != nil {
-		return nil, fmt.Errorf("kinko: 保管庫の中身を解釈できません: %w", err)
+	if err := decoder.Decode(&doc); err != nil {
+		return nil, errors.New("kinko: 保管庫の中身を解釈できません")
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, errors.New("kinko: 保管庫の終端を検証できません")
 	}
 	if doc.Version > FormatVersion {
 		return nil, fmt.Errorf(
 			"kinko: この保管庫は新しい形式です（形式 %d・このコマンドは %d まで）。kinko を更新してください",
 			doc.Version, FormatVersion)
 	}
-	if doc.Secrets == nil {
-		doc.Secrets = map[string]string{}
+	if doc.Version != FormatVersion || doc.Secrets == nil {
+		return nil, errors.New("kinko: 保管庫の形式が不正です")
 	}
 	if doc.VaultID != "" && !validVaultID(doc.VaultID) {
 		return nil, errors.New("kinko: 保管庫の識別子が不正です")
 	}
 
-	return &Vault{path: path, doc: doc}, nil
+	return &Vault{path: canonical, doc: doc, snapshot: sha256.Sum256(raw), loaded: true}, nil
 }
 
 // Get は秘密を1件取り出す。
@@ -230,17 +245,26 @@ func (v *Vault) SetVaultID(id string) error {
 // 全部読めなくなるので、それは秘密の全損になる。
 // 一時ファイルへ書き切ってから置き換える。
 func (v *Vault) Save(password string) error {
+	return v.save(password, os.Rename)
+}
+
+// replace is injected only by package tests; production always uses os.Rename.
+func (v *Vault) save(password string, replace func(string, string) error) (err error) {
 	if password == "" {
 		return errors.New("kinko: パスワードが空です")
+	}
+	unlock, err := lockWriter(v.path)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, unlock()) }()
+	if err := v.checkSnapshot(); err != nil {
+		return err
 	}
 	if _, err := v.EnsureID(); err != nil {
 		return err
 	}
-
 	dir := filepath.Dir(v.path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("kinko: 保管庫の置き場を作れません: %w", err)
-	}
 
 	recipient, err := age.NewScryptRecipient(password)
 	if err != nil {
@@ -261,6 +285,7 @@ func (v *Vault) Save(password string) error {
 		return fmt.Errorf("kinko: 暗号化を完了できません: %w", err)
 	}
 
+	nextSnapshot := sha256.Sum256(buf.Bytes())
 	tmp, err := os.CreateTemp(dir, ".kinko-*.tmp")
 	if err != nil {
 		return fmt.Errorf("kinko: 一時ファイルを作れません: %w", err)
@@ -291,9 +316,19 @@ func (v *Vault) Save(password string) error {
 		return fmt.Errorf("kinko: 一時ファイルを閉じられません: %w", err)
 	}
 
-	if err := os.Rename(tmpName, v.path); err != nil {
-		return fmt.Errorf("kinko: 保管庫を置き換えられません: %w", err)
+	if v.loaded {
+		if err := replace(tmpName, v.path); err != nil {
+			return fmt.Errorf("kinko: 保管庫を置き換えられません: %w", err)
+		}
+	} else {
+		// Link publishes a complete encrypted file only if the name is absent.
+		// Unlike Stat + Rename it cannot overwrite even an uncoordinated creator.
+		if err := os.Link(tmpName, v.path); err != nil {
+			return fmt.Errorf("kinko: 新しい保管庫を公開できません: %w", err)
+		}
 	}
+	v.snapshot = nextSnapshot
+	v.loaded = true
 	return nil
 }
 

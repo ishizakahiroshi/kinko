@@ -40,22 +40,34 @@ var placeholder = regexp.MustCompile(`\$\{kinko:([^}]+)\}`)
 // 渡した先の振る舞いまでは面倒を見られない。
 func RunWithOptions(args []string, options CommandOptions) error {
 	envFile := ""
+	seenEnvFile := false
 	rest := args
 	for len(rest) > 0 {
 		switch {
 		case rest[0] == "--env-file":
-			if len(rest) < 2 {
+			if seenEnvFile {
+				return errors.New("--env-file を重複して指定できません")
+			}
+			seenEnvFile = true
+			if len(rest) < 2 || strings.HasPrefix(rest[1], "--") {
 				return errors.New("--env-file にファイルを指定してください")
 			}
 			envFile = rest[1]
 			rest = rest[2:]
 		case strings.HasPrefix(rest[0], "--env-file="):
+			if seenEnvFile {
+				return errors.New("--env-file を重複して指定できません")
+			}
+			seenEnvFile = true
 			envFile = strings.TrimPrefix(rest[0], "--env-file=")
 			rest = rest[1:]
 		case rest[0] == "--":
 			rest = rest[1:]
 			goto done
 		default:
+			if strings.HasPrefix(rest[0], "-") {
+				return errors.New("kinko: run のオプションが不正です")
+			}
 			goto done
 		}
 	}
@@ -64,7 +76,7 @@ done:
 	if envFile == "" {
 		return errors.New("使い方: kinko run --env-file <テンプレ> -- <コマンド> [引数...]")
 	}
-	if len(rest) == 0 {
+	if len(rest) == 0 || strings.TrimSpace(rest[0]) == "" {
 		return errors.New("実行するコマンドを指定してください（-- のあとに書きます）")
 	}
 
@@ -260,13 +272,19 @@ func expand(template string, v *vault.Vault) ([]string, error) {
 // バックアップを別の場所（外付けディスク・別マシン）へ置くときに、
 // 日常使いのパスワードと分けられるようにするため。
 func ExportWithOptions(args []string, options CommandOptions) error {
-	if len(args) != 1 {
+	args, err := positionalArgs(args)
+	if err != nil {
+		return err
+	}
+	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 		return errors.New("使い方: kinko export <出力先>")
 	}
 	dest := args[0]
 
-	if _, err := os.Stat(dest); err == nil {
+	if _, err := os.Lstat(dest); err == nil {
 		return fmt.Errorf("kinko: 出力先が既にあります: %s", dest)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("kinko: 出力先を確認できません: %w", err)
 	}
 
 	path, err := VaultPath()
@@ -292,38 +310,17 @@ func ExportWithOptions(args []string, options CommandOptions) error {
 		return errors.New("kinko: パスワードは8文字以上にしてください")
 	}
 
-	out, err := vault.Create(dest, destPassword)
-	if err != nil {
+	// A legacy source first gets a persisted identity, so source and backup
+	// remain bound to the same logical vault even across a later reopen.
+	if src.VaultID() == "" {
+		if err := session.Save(); err != nil {
+			return err
+		}
+	}
+	if err := src.Export(dest, destPassword); err != nil {
 		return err
 	}
-	succeeded := false
-	defer func() {
-		// Create直後に空のvaultファイルが書かれている。この後の手順が
-		// 途中で失敗すると、その空vaultが出力先に残り、再実行が
-		// 「出力先が既にあります」で拒否され続ける。ベストエフォートで掃除する。
-		if !succeeded {
-			_ = os.Remove(dest)
-		}
-	}()
-	if src.VaultID() != "" {
-		if err := out.SetVaultID(src.VaultID()); err != nil {
-			return err
-		}
-	}
-	for _, name := range src.Names() {
-		value, err := src.Get(name)
-		if err != nil {
-			return err
-		}
-		if err := out.Set(name, value); err != nil {
-			return err
-		}
-	}
-	if err := out.Save(destPassword); err != nil {
-		return err
-	}
-	succeeded = true
 
-	fmt.Fprintf(os.Stderr, "%d 件を書き出しました: %s\n", out.Count(), dest)
+	fmt.Fprintf(os.Stderr, "%d 件を書き出しました: %s\n", src.Count(), dest)
 	return nil
 }

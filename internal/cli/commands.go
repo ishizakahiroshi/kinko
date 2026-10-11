@@ -10,6 +10,9 @@ import (
 
 // Init は新しい保管庫を作る。
 func Init(args []string) error {
+	if len(args) != 0 {
+		return errors.New("使い方: kinko init")
+	}
 	path, err := VaultPath()
 	if err != nil {
 		return err

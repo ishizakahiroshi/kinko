@@ -27,7 +27,10 @@ func withPipedStdin(t *testing.T, lines ...string) {
 		t.Fatal(err)
 	}
 	os.Stdin = read
-	t.Cleanup(func() { os.Stdin = oldStdin })
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		_ = read.Close()
+	})
 }
 
 func TestInitRejectsMismatchedConfirmation(t *testing.T) {

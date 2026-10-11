@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -70,10 +71,17 @@ func unlockFallbackMessage(kind unlockservice.ErrorKind) string {
 
 // AddWithOptions は秘密を追加・更新する。
 func AddWithOptions(args []string, options CommandOptions) error {
+	args, err := positionalArgs(args)
+	if err != nil {
+		return err
+	}
 	if len(args) < 1 {
 		return errors.New("使い方: kinko add <名前> [値]")
 	}
-	name := args[0]
+	name := strings.TrimSpace(args[0])
+	if name == "" {
+		return errors.New("kinko: 名前が空です")
+	}
 
 	var value string
 	if len(args) >= 2 {
@@ -109,8 +117,15 @@ func AddWithOptions(args []string, options CommandOptions) error {
 
 // GetWithOptions は秘密を標準出力へ出す。
 func GetWithOptions(args []string, options CommandOptions) error {
+	args, err := positionalArgs(args)
+	if err != nil {
+		return err
+	}
 	if len(args) != 1 {
 		return errors.New("使い方: kinko get <名前>")
+	}
+	if strings.TrimSpace(args[0]) == "" {
+		return errors.New("kinko: 名前が空です")
 	}
 
 	path, err := VaultPath()
@@ -125,12 +140,18 @@ func GetWithOptions(args []string, options CommandOptions) error {
 	if err != nil {
 		return err
 	}
-	fmt.Print(value)
-	return nil
+	return writeSecret(os.Stdout, value)
 }
 
 // ListWithOptions は秘密の名前一覧を出す。
 func ListWithOptions(args []string, options CommandOptions) error {
+	args, err := positionalArgs(args)
+	if err != nil {
+		return err
+	}
+	if len(args) > 1 {
+		return errors.New("使い方: kinko list [接頭辞]")
+	}
 	path, err := VaultPath()
 	if err != nil {
 		return err
@@ -150,7 +171,9 @@ func ListWithOptions(args []string, options CommandOptions) error {
 		if prefix != "" && !strings.HasPrefix(name, prefix) {
 			continue
 		}
-		fmt.Println(name)
+		if _, err := fmt.Fprintln(os.Stdout, name); err != nil {
+			return errors.New("kinko: 標準出力へ書き込めません")
+		}
 		count++
 	}
 	fmt.Fprintf(os.Stderr, "%d 件\n", count)
@@ -159,8 +182,15 @@ func ListWithOptions(args []string, options CommandOptions) error {
 
 // RemoveWithOptions は秘密を削除する。
 func RemoveWithOptions(args []string, options CommandOptions) error {
+	args, err := positionalArgs(args)
+	if err != nil {
+		return err
+	}
 	if len(args) != 1 {
 		return errors.New("使い方: kinko rm <名前>")
+	}
+	if strings.TrimSpace(args[0]) == "" {
+		return errors.New("kinko: 名前が空です")
 	}
 
 	path, err := VaultPath()
@@ -372,4 +402,28 @@ func confirm(prompt string) (bool, error) {
 	default:
 		return false, nil
 	}
+}
+
+// positionalArgs rejects an option in the name/path slot before any input.
+// A leading -- permits a literal name/path beginning with a hyphen. Subsequent
+// add arguments remain values (space-joined), preserving its existing contract.
+func positionalArgs(args []string) ([]string, error) {
+	if len(args) > 0 {
+		if args[0] == "--" {
+			return args[1:], nil
+		}
+		if strings.HasPrefix(args[0], "-") {
+			return nil, errors.New("kinko: 不明なオプションです。名前やパスの前には -- を指定できます")
+		}
+	}
+	return args, nil
+}
+
+func writeSecret(w io.Writer, value string) error {
+	n, err := io.WriteString(w, value)
+	if err != nil || n != len(value) {
+		// A writer error could contain its input. Never include it in diagnostics.
+		return errors.New("kinko: 標準出力へ書き込めません")
+	}
+	return nil
 }

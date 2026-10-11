@@ -114,6 +114,9 @@ func readLine(r io.Reader) (string, error) {
 			buf = append(buf, one[0])
 		}
 		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				return "", err
+			}
 			if len(buf) > 0 {
 				return strings.TrimRight(string(buf), "\r"), nil
 			}
