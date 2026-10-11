@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>P-20261011-012 kinko 実用 CLI 構築報告</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color:#172b3a;background:#f1f4f6;color-scheme:light}*{box-sizing:border-box}body{margin:0}main{max-width:1080px;margin:32px auto;padding:36px;background:white}h1{font-size:1.8rem;line-height:1.4}h2{margin-top:2.2rem;font-size:1.35rem}h3{font-size:1.05rem}p,li{line-height:1.7}li{margin:.35rem 0}table{border-collapse:collapse;width:100%;font-size:.91rem;table-layout:fixed}th,td{border:1px solid #d2dce3;padding:10px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#eaf0f4}code{font-family:ui-monospace,monospace;overflow-wrap:anywhere}a{color:#086087;overflow-wrap:anywhere}.status{font-weight:650;color:#7b4c00}.small,footer{font-size:.88rem;color:#476170}footer{margin-top:36px}.scroll{overflow-x:auto}@media(max-width:650px){main{margin:0;padding:20px}table{font-size:.84rem}th,td{padding:7px}h1{font-size:1.5rem}}@media print{main{margin:0;padding:0}tr{break-inside:avoid}h2,h3{break-after:avoid}a{color:inherit}}
+</style>
+</head>
+<body><main>
+<h1>P-20261011-012 kinko 実用 CLI 構築報告</h1>
+<p class="status">修正候補 660417bf の独立ソースレビューは完了。branch 更新は取り消され、remote head は ffcf35c のままです。660417bf の Windows 検査は一部成功報告を受領し、vault test・CI と手元の再検収は未完了のため、構築完了・release-ready とは判定しません。</p>
+<p>2026-10-11 UTC 時点。<a href="https://github.com/ishizakahiroshi/kinko/pull/2">Draft PR #2</a> は main 向け。状態の正本は <a href="https://github.com/ishizakahiroshi/kinko/issues/1">Issue #1</a>。この HTML と正式レビュー・hash 一覧は提出準備中のローカル資料です。文書のみの commit object 作成を追加許可されましたが、ref 更新は停止中です。</p>
+
+<h2>対象と固定した証跡</h2>
+<table><thead><tr><th scope="col">区分</th><th scope="col">識別子と状態</th></tr></thead><tbody>
+<tr><td>repository / branch</td><td><a href="https://github.com/ishizakahiroshi/kinko">ishizakahiroshi/kinko</a><br><code>dots/practical-cli-construction-P-20261011-012</code></td></tr>
+<tr><td>固定指示 SHA</td><td><code>6e81e57a0f2a5f9e4e6cebb6b3d3a412f6bc5b9e</code></td></tr>
+<tr><td>挙動基準 SHA</td><td><code>9d463955b06e5b25bc5c80492eb1ded4f5761fe9</code></td></tr>
+<tr><td>統合済み main 基準</td><td><code>ad842a4f56427871ccb4386d1ff125a99ab9850a</code></td></tr>
+<tr><td>確認した remote head</td><td><a href="https://github.com/ishizakahiroshi/kinko/commit/ffcf35c9271490636370e58224c4d4215cd4e6c5"><code>ffcf35c9271490636370e58224c4d4215cd4e6c5</code></a><br>15:24 UTC に ref を再確認。main 統合済み。</td></tr>
+<tr><td>修正 code SHA / review 対象 SHA</td><td><a href="https://github.com/ishizakahiroshi/kinko/commit/660417bfef87c9d615fe0c935c9a74c93f22f875"><code>660417bfef87c9d615fe0c935c9a74c93f22f875</code></a><br>commit object は作成済み。ref 更新は取り消され、再試行していません。</td></tr>
+<tr><td>修正 tree SHA</td><td><code>16e1b645da44eabe2586bcf336d2eaf898acf81a</code></td></tr>
+<tr><td>独立レビュー範囲</td><td>固定指示 → 660417bf は 31 files、挙動基準 → 660417bf は 35 files、main → 660417bf は 56 files。全差分を別 context で確認。各比較の behind は 0。修正 13 blobs は固定 SHA とローカルの byte 一致を確認。</td></tr>
+<tr><td>回収資料</td><td><code>recovery-files-660417bf.json</code> に修正 13 files の repository 相対 path、Git blob SHA-1、SHA-256、bytes を記録。<code>REVIEW_RESULTS.md</code> は同じ code SHA の正式レビュー。これらの文書自身と README/examples の追加説明は code SHA に含みません。</td></tr>
+</tbody></table>
+
+<h2>実装した日常操作と保存保護</h2>
+<ul>
+<li>排他的な directory 作成で writer lock を取り、Open 時の暗号文 SHA-256 snapshot と保存直前の現物を照合します。別 process の同時 init は1件だけ公開し、stale add/rm/save は競合として拒否します。保存対象が消えた場合や、新しく作った Vault が既存 file を指す場合も <code>ErrConflict</code> を返します。</li>
+<li>既存 symlink と親 directory を正規化し、同じ canonical path の lock を共有します。通常エラー時は lock と暗号化 temp を片付け、crash lock は自動で奪いません。</li>
+<li>age 復号を認証された EOF まで読み切ります。複数 chunk の末尾空白、切断・改変、余分な JSON、無効 version、重複 field と不正 secret 型を拒否します。正当な空文字列と format 1、ID のない旧 format 1 は維持します。</li>
+<li>新規 vault と export は完成済み暗号文を hard link で一度だけ公開します。既存 destination を上書き・削除せず、論理 <code>vault_id</code> と未知の任意 metadata を保持します。既存 file の保存は同 directory 内の暗号化 temp から rename します。</li>
+<li>init/list の余分な引数、空の名前、不正 option を password 入力や書込みより前に拒否します。add の複数語を space で結合する既存契約を保ち、先頭が hyphen の名前・path は <code>--</code> で明示できます。</li>
+<li>non-TTY input は必要な1行だけ読み、run の子 stdin を先読みしません。get は値のみ・改行なし、list は名前のみです。get の write error / short write は安全な診断で失敗し、値を error に含めません。</li>
+<li>run は子 stdin/stdout/stderr と exit code を維持します。missing reference なら子を起動せず、password 環境変数は大小文字を問わず子へ引き継ぎません。</li>
+<li>provider の cancel / deadline と結果が競合したときは中止を優先します。Windows verification 後の credential 読取失敗は追加 password fallback へ進めず、Linux は no-prompt と無効 object path を区別します。</li>
+<li>予約名のみの template と、値を表示せず存在だけを調べる example を追加しました。main の保存競合改善、scanner の NUL・mask・短い needle 対策と portfolio は統合後も保持しています。</li>
+</ul>
+
+<h2>独立指摘と修正結果</h2>
+<p>実装者と別 context の担当が ffcf35c を全差分レビューし、660417bf の固定 source を再レビューしました。P2 3件について修正と合成回帰を照合し、追加の blocking finding はありません。これは静的レビューの結論であり、新候補の test 実行成功や実機 user-presence 成功を意味しません。</p>
+<table><thead><tr><th scope="col">指摘</th><th scope="col">660417bf の対応</th><th scope="col">残る検証</th></tr></thead><tbody>
+<tr><td>P2 JSON secret の null / 重複 key</td><td>object を一意 key として読み、各値を JSON string として検証。null・非文字列・重複の拒否と、拒否時 ciphertext 不変を回帰に追加。空文字・旧 format・未知 metadata の正当な roundtrip を維持。</td><td>暗号化合成 regression の実行。baseline / ffcf の probe exit 0 は不具合の観測であり、候補の合格ではありません。</td></tr>
+<tr><td>P2 Linux no-prompt / 無効 path</td><td>Secret Service の no-prompt sentinel <code>/</code> を正常として扱い、empty / malformed / root の session・item・collection を拒否。実 prompt を起動しない helper 回帰を追加。</td><td>Linux test と source review の先に desktop Secret Service acceptance が残ります。実 UI は開いていません。</td></tr>
+<tr><td>P2 Windows verify 後の fallback</td><td>verification 成功後の store read 失敗を fallback 不可の分類へ統一。fake store で各失敗時の reader 未呼出し、cancel 時の read 未呼出しを検査。</td><td>Windows build-tag test と実機 Hello の確認は別ゲートです。</td></tr>
+</tbody></table>
+<p>CI 由来の問題も同じ候補で修正しています。Darwin の未宣言 <code>explicit_bzero</code> 呼出しを、最適化で除去されない <code>memset_s</code> と宣言 macro に置換。mutable CFData の zero-before-release を維持しました。source contract test は CRLF を LF に正規化して同じ契約を検査します。既存 CI の Go toolchain を公式安定版 1.27.2 に更新し、最低言語版と製品依存は変更していません。</p>
+
+<h2>検査 command と実行結果</h2>
+<p>合成 vault / fixture のみを使用。実 vault、実 password、token、OS credential の取得・保存・削除、Windows PIN 操作は行っていません。</p>
+<table><thead><tr><th scope="col">対象と環境</th><th scope="col">command / exit / 状態</th><th scope="col">証明できる範囲</th></tr></thead><tbody>
+<tr><td>Linux cloud / 660417bf source</td><td><code>git diff --cached --check</code>: exit 0<br><code>node scripts/secrets-scan.mjs --all-tracked --block</code>: exit 0、58 files</td><td>実装担当と独立担当で確認。0 private watchlist needles + 4 structural patterns。KB_ROOT/FAMILY_ROOT がないため private watchlist 全体の検査ではありません。</td></tr>
+<tr><td>Linux cloud / 660417bf</td><td><code>gofmt</code>、<code>go test -count=1 ./...</code>、<code>go vet ./...</code>: 未実行</td><td>Go toolchain、gofmt、module cache なし。依存・toolchain を導入していません。存在する同名実行 file は Go compiler ではありません。</td></tr>
+<tr><td>手元 Windows / ffcf35c<br>依頼者の実行報告</td><td><code>go test -count=1 ./...</code>、<code>go vet ./...</code>、変更 Go の format、<code>node scripts/secrets-scan.mjs --all-tracked --block</code>: 成功報告。scan 58 files / 126 needles。</td><td>ffcf35c までの検査。660417bf の追加 source・Darwin 修正・CI toolchain 更新は含みません。</td></tr>
+<tr><td>手元 Windows / b951e131 と統合後 ffcf35c<br>依頼者の実 main 別 process 検査</td><td>init → stdin add → get → list → run → export → backup get → wrong password → rm、init/list 余分引数拒否、get closed stdout の成功報告。</td><td>non-TTY、get 改行なし、子 stdio と exit 7、誤 password 後の暗号文維持。NTFS Create / Export 成功。新候補で再検収が必要です。</td></tr>
+<tr><td>手元 Windows / 660417bf<br>15:27 UTC の依頼者報告</td><td>vet / 変更 Go format / scan 58 files 成功。CLI / unlock test 成功。vault test 実行中。</td><td>COM read-only は device-not-present、symlink alias は skip。対話 Hello 未実施。独立担当の Go 実行ではなく、全 test 成功の確定前です。</td></tr>
+<tr><td>CI / 660417bf</td><td>pull_request workflow_runs: 0件。ref 未更新のため未起動。</td><td>未実行を成功に数えません。公開後、同じ final SHA の3 OS / Ubuntu race / govulncheck / secrets-scan を確認します。</td></tr>
+<tr><td>実機 native acceptance</td><td>Windows Hello、macOS user-presence、Linux desktop credential: 未実施</td><td>fake provider、source contract、CI、cross build は実際の利用者操作を代替しません。</td></tr>
+</tbody></table>
+<p class="small">CLI 回帰の subprocess helper は production の関数を呼びますが、main binary そのものではありません。上表の「実 main」は依頼者側の別検査です。新しい提出資料は58-file tracked scan の対象外でした。その後、同じ scanner の file 列挙だけをメモリ上で固定した read-only 検査を文書6 files に実行し、exit 0、0 needles + 4 patterns を確認しました。検出・除外・終了処理は変更していません。公開前に私有 watchlist を含む資料込みの最終 scan が必要です。</p>
+
+<h3>最初の Go CI の実結果</h3>
+<p><a href="https://github.com/ishizakahiroshi/kinko/actions/runs/38150357418">ffcf35c の run 38150357418</a> が本件最初の Go CI です。それ以前の secrets-scan の成功を Go CI 成功とは扱いません。</p>
+<table><thead><tr><th scope="col">job</th><th scope="col">実結果</th><th scope="col">660417bf に含めた対応</th></tr></thead><tbody>
+<tr><td>Ubuntu 114502349500</td><td>go vet / go test / go test -race が成功</td><td>既存検査と race を維持</td></tr>
+<tr><td>Windows 114502349471</td><td>go vet 成功。test は macOS source contract の CRLF 相違で failure。CLI / vault package は成功。</td><td>CRLF 正規化後に同じ zeroing 契約を確認</td></tr>
+<tr><td>macOS 114502349439</td><td>go vet の C compile で explicit_bzero 未宣言。後続 test は skip。</td><td>Darwin memset_s / 宣言 macro。test 未実行を合格扱いしない。</td></tr>
+<tr><td>govulncheck 114502349311</td><td>exit 3。GO-2026-4971、net@go1.25.0。Linux DBus から net.Dial への到達を報告。</td><td>CI Go を 1.27.2 へ。警告抑止や x/crypto の盲目 update は行わない。</td></tr>
+<tr><td>secrets-scan</td><td><a href="https://github.com/ishizakahiroshi/kinko/actions/runs/38150357395">run 38150357395</a> 成功</td><td>main 由来の scanner 改善を維持</td></tr>
+</tbody></table>
+
+<h2>互換性と保証の境界</h2>
+<ul>
+<li>競合を自動 merge / retry しません。最新 vault を開き直して再操作します。個々の Vault 値の goroutine 同時利用は非対応で、独立した Open を使います。</li>
+<li>旧 format 1 は ID がなくても読めます。旧 source の export は先に source を保存して ID を付けます。その後 backup 作成が失敗しても source の metadata 付与は残り得ます。</li>
+<li>新規作成と export は <code>os.Link</code> 必須です。FAT / exFAT など hard-link 非対応 FS は非対応で、安全に失敗します。未検証 FS を対応済みとはしません。</li>
+<li>保証は協調する現行 writer と、安定した canonical path に限ります。hard-link 別名、network / sync FS、旧・非協調 writer、第三者による親 directory / symlink / lock 差替えは排他保証の外です。</li>
+<li>crash lock は自動回収しません。全 writer の終了と正規化された対象を確認してから、残った空 lock のみを手動削除します。経過時間や PID だけでは安全を判定できません。</li>
+<li>暗号文 temp の file sync は行いますが、directory metadata の fsync や複数世代 backup はありません。完全な電源断耐性は主張しません。公開後の lock cleanup に失敗した場合は保存済みの可能性があり、開き直して確認します。</li>
+<li>誤 password、入力拒否、認証エラー、競合、公開前の失敗は元の暗号文を保持します。OS cleanup 自体が失敗して temp が残る場合でも、その内容は暗号文です。</li>
+<li>get の出力先が途中で失敗する前に送られた bytes は取り消せません。run で渡した個別値の扱いは子 command の信頼境界です。</li>
+<li>provider の path-based 登録 route は維持します。端末解除には登録時の path を使います。Windows verification 後の credential 失敗は停止し、password を明示利用する場合は別 invocation の <code>--master-password</code> を使います。</li>
+<li>Go 1.25 は source の最低言語版です。日常利用には security patch を含む現在サポートされる安定版を推奨し、CI は Go 1.27.2 に設定しています。README/examples に同説明を追記しました。</li>
+</ul>
+
+<h2>公式仕様との照合</h2>
+<ul>
+<li>Go 安定版は <a href="https://go.dev/dl/?mode=json">公式 download JSON</a> で 1.27.2 / stable を確認。<a href="https://pkg.go.dev/vuln/GO-2026-4971">GO-2026-4971</a> は 1.25.10 および 1.26.3 の修正版境界を確認しました。</li>
+<li>Apple の <a href="https://github.com/apple-oss-distributions/Libc/blob/main/string/NetBSD/memset_s.3">memset_s manual source</a> と libc header で、最適化除去のない消去と宣言条件を確認しました。</li>
+<li>Secret Service の <a href="https://specifications.freedesktop.org/secret-service/latest/org.freedesktop.Secret.Collection.html">Collection</a>、<a href="https://specifications.freedesktop.org/secret-service/latest/org.freedesktop.Secret.Item.html">Item</a>、<a href="https://specifications.freedesktop.org/secret-service/latest/org.freedesktop.Secret.Service.html">Service</a> の object path / prompt 契約を確認しました。</li>
+</ul>
+
+<h2>戻し方と残る判断</h2>
+<p>main / develop、tag、release、deploy は変更していません。候補を採用しない場合は Draft PR を保持し、利用 binary を変更しません。採用後の code rollback は案件の差分を確認した revert とし、vault や backup を削除しません。format 1 のままですが、旧 writer は任意 metadata を落とす可能性があるため、端末解除の互換性を別途確認します。</p>
+<ol>
+<li>branch 保存の再指示を得て、回収・整形後の final SHA を固定する。更新の取消しを成功や暗黙の再試行許可とは扱わない。</li>
+<li>同じ final SHA で変更 Go の gofmt、test、vet、全資料込み secrets-scan と3 OS CI・Ubuntu race・govulncheck を完了する。新 SHA が生じたら独立レビューを更新する。</li>
+<li>依頼者側で全 diff と実 main の一連操作を再検収する。null / duplicate の拒否と正当入力、source / destination 保持を含む。</li>
+<li>Windows Hello、macOS / Linux native acceptance と、利用予定 FS の確認は別ゲートとして残る。どの未検証 FS を運用対象にするかは未決定。</li>
+</ol>
+<footer>この HTML は単一 file で読めます。外部 script / font / image、実データ、秘密値、私有会話 locator、ローカル絶対 path は含めていません。リンクは公開 repository と公式仕様の参照です。</footer>
+</main></body></html>

@@ -1,0 +1,88 @@
+{
+  "repository": "ishizakahiroshi/kinko",
+  "branch": "dots/practical-cli-construction-P-20261011-012",
+  "base_sha": "ffcf35c9271490636370e58224c4d4215cd4e6c5",
+  "code_commit_object": "660417bfef87c9d615fe0c935c9a74c93f22f875",
+  "tree_sha": "16e1b645da44eabe2586bcf336d2eaf898acf81a",
+  "branch_ref_update": "cancelled; remote head remained ffcf35c9271490636370e58224c4d4215cd4e6c5",
+  "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "git_blob_sha1": "aace51f24130fa5d4f1d231d4eb197aa44384ade",
+      "sha256": "437e110e790de37ec5a8c725c86c45668e3f16f7ce943e2631b8668ef4d4f856",
+      "bytes": 1765
+    },
+    {
+      "path": "CLAUDE.md",
+      "git_blob_sha1": "3b1d5d0c37b17de4dc35d20e663dde419a602c3f",
+      "sha256": "7c12c04e89b31b909ceb2b45831b026452850b9b9380ebe3958d2a0629a4ea73",
+      "bytes": 9414
+    },
+    {
+      "path": "docs/reference_architecture.md",
+      "git_blob_sha1": "ec5db8bf7f0f5d03a041398442b153e680d266f0",
+      "sha256": "57f4558128fd5d003d19cb9ecd296414c90775f043c2f3d044d687529f05ea0b",
+      "bytes": 18999
+    },
+    {
+      "path": "docs/reference_cli.md",
+      "git_blob_sha1": "627f1e23fea309701d2d180ffc42e0a7b063ee3c",
+      "sha256": "eefc9f07019d0140cc500c74803646f0cf0556b1311a424c55c3c7c0df17b690",
+      "bytes": 16927
+    },
+    {
+      "path": "internal/unlock/linux_secret_service.go",
+      "git_blob_sha1": "262097a401bb1fa94da6f7635e7b9b3312841079",
+      "sha256": "35924ccf4cbe503d6651335a001338fe789eca2194b520677ebb5c657233a990",
+      "bytes": 10677
+    },
+    {
+      "path": "internal/unlock/linux_secret_service_test.go",
+      "git_blob_sha1": "d7a1eea17804ba66b7ebdaf1105fbb9f625d73aa",
+      "sha256": "4d332ac904f8cdaa030dd2e18959f79767bf2ca3baab54948b4a83e5c2fcba2a",
+      "bytes": 1966
+    },
+    {
+      "path": "internal/unlock/macos_keychain.go",
+      "git_blob_sha1": "68ff2908da5d01f79c67f7c66454e1ce229a1c68",
+      "sha256": "d495d6c5ce25d8a6d9671951f3a127f85644ea050e472dff6461e0d7b264f9d2",
+      "bytes": 10530
+    },
+    {
+      "path": "internal/unlock/macos_keychain_contract_test.go",
+      "git_blob_sha1": "ddad8c7425687365193b749b257a11ee28fb3ab9",
+      "sha256": "33d0cb807576f3dbf38a60d68e0ceabcb07b93781be85d2875359460d5cf0193",
+      "bytes": 1337
+    },
+    {
+      "path": "internal/unlock/provider.go",
+      "git_blob_sha1": "4b365bd6c60d94af079644cd2c75f4a66bf3b7da",
+      "sha256": "58df3600d6f14a3c332d2a78de47e970d0b8d24fbe16987f414eb9c97cd18ddb",
+      "bytes": 7530
+    },
+    {
+      "path": "internal/unlock/windows_provider.go",
+      "git_blob_sha1": "0933ca9d70a0d7eddbfef6f21c97e8a05ea4b53b",
+      "sha256": "3b24a6bc7765106b5908edb1a9ae6ee89fe577cc3114dace8a91fb2d201b25c5",
+      "bytes": 5185
+    },
+    {
+      "path": "internal/unlock/windows_provider_test.go",
+      "git_blob_sha1": "da9a05780be45179a57f3f36391e82d188e755c6",
+      "sha256": "d64ecb0b34e9ea3cc0e17cf1170e80465c9bb90800b0d58acd2ebd85300d3c1b",
+      "bytes": 6592
+    },
+    {
+      "path": "internal/vault/persistence.go",
+      "git_blob_sha1": "8a5d851da0243386da165fb9e14024290e9f3a6d",
+      "sha256": "36b2f2f9e594222609510e677656694772b7172692857f19d9b9b155307ed919",
+      "bytes": 6646
+    },
+    {
+      "path": "internal/vault/persistence_test.go",
+      "git_blob_sha1": "e31b2194df74121c39cc14ac070f1ad121de9b16",
+      "sha256": "82be25f4fcf7a34a56e6c2629f1a78115fe99dc9c367c9da550e0d35444a78f0",
+      "bytes": 13362
+    }
+  ]
+}

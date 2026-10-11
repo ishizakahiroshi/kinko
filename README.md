@@ -38,7 +38,7 @@ AI CLI や検索コマンドが設定ファイル全体を読んだときに、�
 
 ## インストール
 
-Go 1.25 以降が必要です。
+Go 1.25 は source の最低言語版です。日常利用には security patch を含む現在サポートされる安定版を推奨し、CI は Go 1.27.2 で検査します（2026-10-11 確認）。
 
 ```sh
 go install github.com/ishizakahiroshi/kinko@latest
@@ -169,6 +169,8 @@ format 1の任意metadataとして`vault_id`を使う方式は2026-08-13に承�
 パスワードを忘れた場合の復旧手段はありません。`kinko export` で別パスワードの
 バックアップを作り、保管庫本体とは別の安全な場所へ置いてください。
 
+### 保存先 filesystem と競合
+
 同じ vault の同時書込みは、片方を明示的に拒否します。競合したコマンドは最新の vault を
 開き直して再実行してください。lock は正規化した対象パスに `.lock` を付けた空ディレクトリで、
 正常終了・通常エラー時に解除します。異常終了で残った lock は自動削除しません。
@@ -176,8 +178,13 @@ format 1の任意metadataとして`vault_id`を使う方式は2026-08-13に承�
 
 既存の export 先は上書きせず、完成した暗号文だけを新規公開します。旧 format 1 の source に
 ID が無い場合は source を一度保存して ID を付け、backup に同じ ID を引き継ぎます。
-新規作成には hard link を使うため、対応するローカル filesystem が必要です。
+その後の export が失敗しても、source への ID 付与は残り得ます。
+新規作成と export は `os.Link` による hard link を使うため、対応するローカル filesystem が必要です。
+FAT / exFAT など hard link 非対応 FS では新規作成・export は非対応で、安全に失敗します。
+手元の NTFS では合成 Create / Export を確認しましたが、未検証 FS を対応済みとは扱いません。
 network/sync filesystem、hard-link 別名、第三者による directory/lock 変更への排他保証はありません。
+暗号文 file の sync は行いますが directory metadata の fsync はなく、完全な電源断耐性は保証しません。
+公開後に lock 解除が失敗した場合は保存済みの可能性があるため、再実行前に開き直して確認します。
 [保存手順と制約](docs/reference_architecture.md#保存手順) も確認してください。
 
 ## 安全性の境界
@@ -228,6 +235,3 @@ pwsh -File scripts/install-hooks.ps1
 ## ライセンス
 
 [MIT License](LICENSE)
-
-FAT / exFAT など hard link 非対応 FS での新規作成・export は非対応であり、安全に失敗する。
-未検証の FS を対応済みとは扱わない。
