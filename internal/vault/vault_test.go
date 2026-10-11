@@ -1,11 +1,15 @@
 package vault
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"filippo.io/age"
 )
 
 const testPassword = "correct-horse-battery-staple"
@@ -120,6 +124,29 @@ func Test既存の保管庫を上書きしない(t *testing.T) {
 	}
 }
 
+func TestSetした名前の前後空白はGetとDeleteでも同じ扱い(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vault.age")
+
+	v, err := Create(path, testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Setは前後の空白をtrimして保存する。Get/Deleteが同じtrimをしないと、
+	// 追加した名前そのままの綴りでは取り出せない・消せないという非対称が起きる。
+	if err := v.Set(" token ", "value"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := v.Get(" token "); err != nil || got != "value" {
+		t.Fatalf("Get(前後空白あり) = %q, err=%v, want value", got, err)
+	}
+	if err := v.Delete(" token "); err != nil {
+		t.Fatalf("Delete(前後空白あり): %v", err)
+	}
+	if _, err := v.Get("token"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Delete後もGetできてしまった: err=%v", err)
+	}
+}
+
 func Test無い名前はErrNotFound(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vault.age")
 
@@ -198,53 +225,168 @@ func Test保存に失敗しても既存の保管庫を壊さない(t *testing.T)
 	}
 }
 
-// 読み込み後に別の操作が保存していた場合、古い内容で上書きせず競合として失敗する。
-func Test古い読み込みからの保存は競合として拒否される(t *testing.T) {
+func Test新規保管庫にはVaultIDがあり保存後も変わらない(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vault.age")
-	if _, err := Create(path, testPassword); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
 
-	a, err := Open(path, testPassword)
+	v, err := Create(path, testPassword)
 	if err != nil {
-		t.Fatalf("Open a: %v", err)
-	}
-	b, err := Open(path, testPassword)
-	if err != nil {
-		t.Fatalf("Open b: %v", err)
-	}
-
-	if err := a.Set("first", "1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.Save(testPassword); err != nil {
-		t.Fatalf("Save a: %v", err)
+	id := v.VaultID()
+	if !validVaultID(id) {
+		t.Fatalf("VaultID = %q, want 32桁のhex", id)
 	}
-	if err := b.Set("second", "2"); err != nil {
+	if err := v.Set("service", "value"); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.Save(testPassword); !errors.Is(err, ErrConflict) {
-		t.Fatalf("Save b = %v, want ErrConflict", err)
+	if err := v.Save(testPassword); err != nil {
+		t.Fatal(err)
 	}
 
 	reopened, err := Open(path, testPassword)
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatal(err)
 	}
-	if _, err := reopened.Get("first"); err != nil {
-		t.Errorf("先の保存内容が失われている: %v", err)
+	if reopened.VaultID() != id {
+		t.Fatalf("再読込後のVaultID = %q, want %q", reopened.VaultID(), id)
 	}
 }
 
-// 既存ファイルがあるときの Create は、確認と保存の間に作られた場合も置き換えない。
+func Test既存format1はVaultIDなしでも開けて次回保存で付与される(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy-vault.age")
+	writeLegacyVault(t, path, testPassword)
+
+	legacy, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatalf("legacy Open: %v", err)
+	}
+	if legacy.VaultID() != "" {
+		t.Fatalf("legacy VaultID = %q, want empty", legacy.VaultID())
+	}
+	if got, err := legacy.Get("legacy"); err != nil || got != "value" {
+		t.Fatalf("legacy secret = %q, err=%v", got, err)
+	}
+
+	if err := legacy.Save(testPassword); err != nil {
+		t.Fatalf("legacy Save: %v", err)
+	}
+	reopened, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatalf("reopen migrated vault: %v", err)
+	}
+	if !validVaultID(reopened.VaultID()) {
+		t.Fatalf("migrated VaultID = %q, want 32桁のhex", reopened.VaultID())
+	}
+	if got, err := reopened.Get("legacy"); err != nil || got != "value" {
+		t.Fatalf("migrated secret = %q, err=%v", got, err)
+	}
+}
+
+func Test不正なVaultIDは開けない(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "invalid-vault.age")
+	writeEncryptedJSON(t, path, testPassword, map[string]any{
+		"version":  1,
+		"vault_id": "not-a-vault-id",
+		"secrets":  map[string]string{},
+	})
+
+	if _, err := Open(path, testPassword); err == nil {
+		t.Fatal("不正なVaultIDを含む保管庫が開けてしまった")
+	}
+}
+
+func Test将来のformatは開けない(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "future-vault.age")
+	writeEncryptedJSON(t, path, testPassword, map[string]any{
+		"version": FormatVersion + 1,
+		"secrets": map[string]string{},
+	})
+
+	if _, err := Open(path, testPassword); err == nil || !strings.Contains(err.Error(), "新しい形式") {
+		t.Fatalf("future format error = %v", err)
+	}
+}
+
+func writeLegacyVault(t *testing.T, path, password string) {
+	t.Helper()
+	writeEncryptedJSON(t, path, password, map[string]any{
+		"version": 1,
+		"secrets": map[string]string{"legacy": "value"},
+	})
+}
+
+func writeEncryptedJSON(t *testing.T, path, password string, value any) {
+	t.Helper()
+	var plain bytes.Buffer
+	if err := json.NewEncoder(&plain).Encode(value); err != nil {
+		t.Fatal(err)
+	}
+	recipient, err := age.NewScryptRecipient(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var encrypted bytes.Buffer
+	w, err := age.Encrypt(&encrypted, recipient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(plain.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encrypted.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Keep the public main branch's concurrent-create regression after integration.
+func Test古い読み込みからの保存は競合として拒否される(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vault.age")
+	if _, err := Create(path, testPassword); err != nil {
+		t.Fatal(err)
+	}
+	a, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Set("example-service/first", "synthetic-first"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Save(testPassword); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Set("example-service/second", "synthetic-second"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Save(testPassword); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale save must preserve ErrConflict")
+	}
+	current, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := current.Get("example-service/first"); err != nil {
+		t.Fatal("the earlier update disappeared")
+	}
+}
+
 func TestCreateは保存時にも既存を置き換えない(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vault.age")
 	stale := &Vault{path: path, doc: document{Version: FormatVersion, Secrets: map[string]string{}}}
-
 	if _, err := Create(path, testPassword); err != nil {
-		t.Fatalf("Create: %v", err)
+		t.Fatal(err)
 	}
+	before := readCiphertext(t, path)
 	if err := stale.Save(testPassword); !errors.Is(err, ErrConflict) {
-		t.Fatalf("Save = %v, want ErrConflict", err)
+		t.Fatalf("stale create must return ErrConflict, got %v", err)
+	}
+	if !bytes.Equal(before, readCiphertext(t, path)) {
+		t.Fatal("stale create changed the existing ciphertext")
 	}
 }
