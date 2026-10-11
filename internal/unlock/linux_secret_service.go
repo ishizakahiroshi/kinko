@@ -90,8 +90,11 @@ func (p *LinuxProvider) Setup(ctx context.Context, route Route, vaultID, passwor
 	if err := call.Store(&item, &prompt); err != nil {
 		return linuxProviderError(err)
 	}
-	if prompt != "" {
-		return NewProviderError(ErrorUnavailable)
+	if err := secretServicePromptResult(prompt); err != nil {
+		return err
+	}
+	if !validSecretObjectPath(item) {
+		return NewProviderError(ErrorCorruptEntry)
 	}
 	return nil
 }
@@ -194,8 +197,8 @@ func (p *LinuxProvider) Disable(ctx context.Context, route Route) error {
 		if err := call.Store(&prompt); err != nil {
 			return linuxProviderError(err)
 		}
-		if prompt != "" {
-			return NewProviderError(ErrorUnavailable)
+		if err := secretServicePromptResult(prompt); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -250,7 +253,7 @@ func openSecretService(ctx context.Context) (*dbus.Conn, dbus.BusObject, dbus.Ob
 		conn.Close()
 		return nil, nil, "", linuxProviderError(err)
 	}
-	if session == "" {
+	if !validSecretObjectPath(session) {
 		conn.Close()
 		return nil, nil, "", NewProviderError(ErrorUnavailable)
 	}
@@ -258,7 +261,7 @@ func openSecretService(ctx context.Context) (*dbus.Conn, dbus.BusObject, dbus.Ob
 }
 
 func closeSecretSession(ctx context.Context, conn *dbus.Conn, session dbus.ObjectPath) {
-	if session == "" {
+	if !validSecretObjectPath(session) {
 		return
 	}
 	_ = dbusObject(conn, session).CallWithContext(ctx, "org.freedesktop.Secret.Session.Close", 0).Err
@@ -267,7 +270,7 @@ func closeSecretSession(ctx context.Context, conn *dbus.Conn, session dbus.Objec
 func defaultSecretCollection(ctx context.Context, root dbus.BusObject) (dbus.ObjectPath, error) {
 	var collection dbus.ObjectPath
 	call := root.CallWithContext(ctx, secretServiceInterface+".ReadAlias", 0, "default")
-	if err := call.Store(&collection); err != nil || collection == "" {
+	if err := call.Store(&collection); err != nil || !validSecretObjectPath(collection) {
 		return "", NewProviderError(ErrorUnavailable)
 	}
 	return collection, nil
@@ -282,6 +285,13 @@ func searchSecretItems(ctx context.Context, root dbus.BusObject, route Route) ([
 	call := root.CallWithContext(ctx, secretServiceInterface+".SearchItems", 0, attributes)
 	if err := call.Store(&unlocked, &locked); err != nil {
 		return nil, nil, linuxProviderError(err)
+	}
+	for _, paths := range [][]dbus.ObjectPath{unlocked, locked} {
+		for _, path := range paths {
+			if !validSecretObjectPath(path) {
+				return nil, nil, NewProviderError(ErrorCorruptEntry)
+			}
+		}
 	}
 	return unlocked, locked, nil
 }
@@ -312,4 +322,21 @@ func linuxProviderError(err error) error {
 		}
 	}
 	return NewProviderError(ErrorUnavailable)
+}
+
+// Secret Service uses the root object path, not an empty string, for no prompt.
+// Never invoke a returned prompt object; a real or malformed prompt fails closed.
+func secretServicePromptResult(prompt dbus.ObjectPath) error {
+	if prompt == "/" {
+		return nil
+	}
+	if !prompt.IsValid() {
+		return NewProviderError(ErrorCorruptEntry)
+	}
+	return NewProviderError(ErrorUnavailable)
+}
+
+// Root is the protocol's empty object sentinel, never a session/item/collection.
+func validSecretObjectPath(path dbus.ObjectPath) bool {
+	return path != "/" && path.IsValid()
 }

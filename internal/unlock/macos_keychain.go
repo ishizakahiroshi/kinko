@@ -4,6 +4,7 @@ package unlock
 
 /*
 #cgo LDFLAGS: -framework Security -framework CoreFoundation
+#define __STDC_WANT_LIB_EXT1__ 1
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
 #include <stdbool.h>
@@ -38,7 +39,9 @@ static CFMutableDictionaryRef kinko_query(const char *account) {
 
 static void kinko_explicit_bzero(void *value, size_t valueLength) {
 	if (value == NULL || valueLength == 0) return;
-	explicit_bzero(value, valueLength);
+	// Darwin exposes C11 Annex K memset_s; unlike memset it cannot be removed
+	// as a dead store. Both lengths come from the same allocated buffer.
+	(void)memset_s(value, valueLength, 0, valueLength);
 }
 
 static CFMutableDataRef kinko_data(const unsigned char *value, size_t valueLength) {

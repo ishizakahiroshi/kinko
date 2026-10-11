@@ -102,9 +102,14 @@ func (p *WindowsProvider) Unlock(ctx context.Context, route Route) (Credential, 
 		return Credential{}, err
 	}
 
+	if err := ctx.Err(); err != nil {
+		return Credential{}, providerErrorForContext(err)
+	}
 	payload, err := p.store.read(route)
 	if err != nil {
-		return Credential{}, err
+		// Verification has already happened. Missing/transient/unknown store
+		// failures must not trigger a second password prompt in this invocation.
+		return Credential{}, NewProviderError(ErrorCredentialReadFailed)
 	}
 	defer zeroBytes(payload)
 

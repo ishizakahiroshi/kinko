@@ -4,6 +4,8 @@ package unlock
 
 import (
 	"context"
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -144,5 +146,55 @@ func TestWindowsBuild22000ContinuesToAvailabilityJudgment(t *testing.T) {
 	if store.configuredCalls != 0 || store.writeCalls != 0 {
 		t.Fatalf("Credential Manager calls = configured:%d write:%d, want zero before availability succeeds",
 			store.configuredCalls, store.writeCalls)
+	}
+}
+
+type failingWindowsCredentialStore struct {
+	countingWindowsCredentialStore
+	readErr error
+}
+
+func (s *failingWindowsCredentialStore) read(Route) ([]byte, error) {
+	s.readCalls++
+	return nil, s.readErr
+}
+
+func TestWindowsPostVerificationReadFailureNeverFallsBack(t *testing.T) {
+	for _, readErr := range []error{
+		NewProviderError(ErrorUnavailable),
+		NewProviderError(ErrorNotConfigured),
+		windowsCredentialNotFound{},
+		errors.New("synthetic-private-detail"),
+	} {
+		verifier := &fakeWindowsVerifier{build: 22000}
+		store := &failingWindowsCredentialStore{readErr: readErr}
+		provider := &WindowsProvider{verifier: verifier, store: store}
+		readerCalled := false
+		result, err := OpenVault(context.Background(), filepath.Join(t.TempDir(), "vault.age"), OpenOptions{
+			Provider:    provider,
+			Interactive: true,
+			ReadPassword: func(string) (string, error) {
+				readerCalled = true
+				return "synthetic-password", nil
+			},
+		})
+		requireWindowsProviderErrorKind(t, err, ErrorCredentialReadFailed)
+		if result != nil || readerCalled || verifier.verifyCalls != 1 || store.readCalls != 1 {
+			t.Fatal("post-verification failure crossed the fallback boundary")
+		}
+		if strings.Contains(err.Error(), "synthetic-private-detail") {
+			t.Fatal("native store detail reached diagnostics")
+		}
+	}
+}
+
+func TestWindowsCanceledVerificationNeverReadsCredential(t *testing.T) {
+	verifier := &fakeWindowsVerifier{build: 22000, verifyErr: NewProviderError(ErrorCanceled)}
+	store := &countingWindowsCredentialStore{}
+	provider := &WindowsProvider{verifier: verifier, store: store}
+	_, err := provider.Unlock(context.Background(), Route{Key: strings.Repeat("a", 32)})
+	requireWindowsProviderErrorKind(t, err, ErrorCanceled)
+	if store.readCalls != 0 || store.configuredCalls != 0 {
+		t.Fatal("canceled verification read credential storage")
 	}
 }

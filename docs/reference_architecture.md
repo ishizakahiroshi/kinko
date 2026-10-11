@@ -145,7 +145,7 @@ Credential Managerを読む`application-gated`、macOSはKeychain access control
 future version は更新を促す。`secrets` は object が必須で、未指定・null は拒否する。
 age 復号後の JSON object は1個だけとし、二度目の Decode が認証済み EOF に到達することを要求する。
 これにより複数 age chunk にまたがる末尾空白の先の切断・改変も拒否する。JSON 末尾の別 object / garbage、
-重複 top-level field も拒否する。未知の任意 metadata は次回保存・export でも保持する。
+重複 top-level field / secret名、string以外の個別値（nullを含む）も拒否する。未知の任意 metadata は次回保存・export でも保持する。
 JSON / stream error の詳細に平文が混ざらないよう、診断は固定文面にする。2026-08-13に承認した方式では`vault_id`を旧format 1に無い場合も読める任意metadataとして扱い、
 新規作成または次回の成功した保存で付与する。旧binaryが未知fieldを落として保存するとIDが消えるため、
 端末解除はstale credentialとして停止するが、master passwordによる復旧は残る。別々に作成したvaultには
@@ -284,3 +284,15 @@ release 前には対象 OS の実 CLI と native user-presence を別々に再�
 
 FAT / exFAT など hard link 非対応 FS での新規作成・export は非対応であり、安全に失敗する。
 未検証の FS を対応済みとは扱わない。
+
+## CI toolchain と native source 検査
+
+2026-10-11 の初回 Go CI は Go 1.25.0 の標準ライブラリ警告
+[GO-2026-4971](https://pkg.go.dev/vuln/GO-2026-4971) を検出したため、許可された範囲で CI を
+[公式 stable Go 1.27.2](https://go.dev/dl/?mode=json) へ更新する。`go.mod` の最低 version と
+module dependencies は変更しない。3 OS test/vet、Ubuntu race、govulncheck は弱化しない。
+
+Darwin の一時 C memory は `memset_s` を使って消去してから release/free する。
+[Apple libc の仕様](https://github.com/apple-oss-distributions/Libc/blob/main/string/NetBSD/memset_s.3) に従い、
+最適化除去されない zeroing を保持する。source contract test は CRLF/LF だけを正規化し、消去順序は同じく必須。
+source contract / compile の成功と実機 Keychain user-presence は別の証拠として扱う。

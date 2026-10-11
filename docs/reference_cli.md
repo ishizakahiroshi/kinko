@@ -169,7 +169,7 @@ master passwordでsource vaultを開き、この端末のOS providerへcredentia
   追加保存する。provider保存失敗後もmaster passwordで開ける
 - Windowsは`RtlGetVersion`で実ビルド番号を確認し、build 22000未満では`unsupported`として
   Hello interopとCredential Managerを呼ばない。対応buildでは`CheckAvailabilityAsync`でHello/PINの
-  利用可否を確認してからWindows Hello確認後のCredential Managerを使う。`DeviceNotPresent`、
+  利用可否を確認してCredential Managerへ保存する。実際のunlockでHello本人確認を行う。`DeviceNotPresent`、
   `NotConfiguredForUser`、`DisabledByPolicy`、`DeviceBusy`、active application HWND不在では保存しない。
   macOSはKeychain user presence、Linuxは
   desktop Secret Serviceを使う。未対応OS、headless、provider UI表示前の利用不能は保存せず失敗する
@@ -249,9 +249,10 @@ password prompt を非対話化する。
 2. TTY なら画面に表示しない端末入力
 3. 非 TTY なら標準入力の 1 行
 
-複数の password prompt を持つ command に、複数行を 1 本の pipe でまとめて渡すことは
-automation の契約に含めない。非対話の `init` は `KINKO_PASSWORD` を使う。非対話の
-`add` で値を標準入力から渡す場合も、password は `KINKO_PASSWORD` で分離する。
+複数行を1本の pipe で順に渡せる。`init` は password と確認の2行、値省略 `add` は値と
+password の2行、`export` は source password と destination password の2行。
+`KINKO_PASSWORD` が空でなければ password 行は不要で、値の行だけを消費する。
+`run` が password を stdin から読む場合も残りの bytes は子へ渡し、先読みで捨てない。
 
 環境変数は子プロセス、診断情報、同じユーザーの別プロセスから読める場合がある。
 CI や限定した自動処理以外では使用しない。
@@ -350,3 +351,9 @@ kinko_password=value
 
 FAT / exFAT など hard link 非対応 FS での新規作成・export は非対応であり、安全に失敗する。
 未検証の FS を対応済みとは扱わない。
+
+Windows の Hello 本人確認後に credential 読出しが失敗した場合は、未登録・削除済み・一時的な
+store failure を含め `credential-read-failed` で停止する。その invocation では password へ戻らない。
+明示的に `--master-password` を指定した別 invocation で再実行できる。未登録確認のために本人確認前へ
+credential read を移していない。Linux Secret Service の prompt不要 sentinel `/` は成功として扱い、
+実際の prompt object は起動せず停止する。これらの合成 test は native acceptance の証明ではない。

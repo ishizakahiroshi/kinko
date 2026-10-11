@@ -32,16 +32,17 @@ const (
 type ErrorKind string
 
 const (
-	ErrorNotConfigured      ErrorKind = "not-configured"
-	ErrorUnsupported        ErrorKind = "unsupported"
-	ErrorUnavailable        ErrorKind = "unavailable"
-	ErrorCanceled           ErrorKind = "cancel"
-	ErrorLocked             ErrorKind = "locked"
-	ErrorCorruptEntry       ErrorKind = "corrupt-entry"
-	ErrorTimeout            ErrorKind = "timeout"
-	ErrorAlreadyConfigured  ErrorKind = "already-configured"
-	ErrorDeviceBusy         ErrorKind = "device-busy"
-	ErrorVerificationFailed ErrorKind = "verification-failed"
+	ErrorNotConfigured        ErrorKind = "not-configured"
+	ErrorUnsupported          ErrorKind = "unsupported"
+	ErrorUnavailable          ErrorKind = "unavailable"
+	ErrorCanceled             ErrorKind = "cancel"
+	ErrorLocked               ErrorKind = "locked"
+	ErrorCorruptEntry         ErrorKind = "corrupt-entry"
+	ErrorTimeout              ErrorKind = "timeout"
+	ErrorAlreadyConfigured    ErrorKind = "already-configured"
+	ErrorDeviceBusy           ErrorKind = "device-busy"
+	ErrorVerificationFailed   ErrorKind = "verification-failed"
+	ErrorCredentialReadFailed ErrorKind = "credential-read-failed"
 )
 
 // ProviderError はproviderから返す、secretを含まないerrorである。

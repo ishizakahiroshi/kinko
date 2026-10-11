@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,38 +116,30 @@ func (v *Vault) Export(path, password string) error {
 
 // Preserve unknown optional metadata when updating a format 1 document.
 func (d *document) UnmarshalJSON(raw []byte) error {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	token, err := decoder.Token()
-	if err != nil || token != json.Delim('{') {
-		return errors.New("invalid vault document")
-	}
-	fields := make(map[string]json.RawMessage)
-	for decoder.More() {
-		token, err := decoder.Token()
-		if err != nil {
-			return errors.New("invalid vault document")
-		}
-		key, ok := token.(string)
-		if !ok {
-			return errors.New("invalid vault field")
-		}
-		if _, exists := fields[key]; exists {
-			return errors.New("duplicate vault field")
-		}
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return errors.New("invalid vault field")
-		}
-		fields[key] = value
-	}
-	if _, err := decoder.Token(); err != nil {
-		return errors.New("invalid vault document")
+	fields, err := decodeUniqueObject(raw)
+	if err != nil {
+		return err
 	}
 	if err := json.Unmarshal(fields["version"], &d.Version); err != nil {
 		return errors.New("invalid vault version")
 	}
-	if err := json.Unmarshal(fields["secrets"], &d.Secrets); err != nil || d.Secrets == nil {
+	secretFields, err := decodeUniqueObject(fields["secrets"])
+	if err != nil {
 		return errors.New("invalid vault secrets")
+	}
+	d.Secrets = make(map[string]string, len(secretFields))
+	for name, rawValue := range secretFields {
+		valueJSON := bytes.TrimSpace(rawValue)
+		// encoding/json accepts null for a Go string as its zero value. Check
+		// the JSON type explicitly so malformed values never become empty secrets.
+		if len(valueJSON) == 0 || valueJSON[0] != '"' {
+			return errors.New("invalid vault secret value")
+		}
+		var value string
+		if err := json.Unmarshal(valueJSON, &value); err != nil {
+			return errors.New("invalid vault secret value")
+		}
+		d.Secrets[name] = value
 	}
 	if id, ok := fields["vault_id"]; ok {
 		if string(id) == "null" || json.Unmarshal(id, &d.VaultID) != nil {
@@ -183,4 +176,39 @@ func (d document) MarshalJSON() ([]byte, error) {
 		fields["vault_id"] = id
 	}
 	return json.Marshal(fields)
+}
+
+func decodeUniqueObject(raw []byte) (map[string]json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, errors.New("invalid vault document")
+	}
+	fields := make(map[string]json.RawMessage)
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, errors.New("invalid vault document")
+		}
+		key, ok := token.(string)
+		if !ok {
+			return nil, errors.New("invalid vault field")
+		}
+		if _, exists := fields[key]; exists {
+			return nil, errors.New("duplicate vault field")
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, errors.New("invalid vault field")
+		}
+		fields[key] = value
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return nil, errors.New("invalid vault document")
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, errors.New("invalid vault document")
+	}
+	return fields, nil
 }

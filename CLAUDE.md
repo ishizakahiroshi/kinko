@@ -86,7 +86,8 @@ OS credentialへの保存、各OSの実機acceptance、同期、正式なrelease
 - `run` は `KINKO_PASSWORD` を case-insensitive に子環境から除外し、template からの再注入も拒否する
 - template の参照が 1 件でも missing なら、空値で子 process を起動しない
 - child command の stdin/stdout/stderr と非 0 exit code を保つ
-- concurrency lock は未実装。同じ vault への同時 writer を安全と仮定しない
+- 協調 writer は正規化した対象の排他 lock と暗号文 snapshot 比較で競合を拒否する。
+  hard-link 別名、非協調 writer、network/sync filesystem への排他は保証しない
 
 ### OS adapter の検証境界
 

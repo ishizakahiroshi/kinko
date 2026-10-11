@@ -168,6 +168,9 @@ func TestOpenRejectsInvalidJSONVersionAndUnauthenticatedEOF(t *testing.T) {
 		{"missing secrets", `{"version":1}`},
 		{"null secrets", `{"version":1,"secrets":null}`},
 		{"duplicate version", `{"version":0,"version":1,"secrets":{}}`},
+		{"null value", `{"version":1,"secrets":{"example-service/token":null}}`},
+		{"number value", `{"version":1,"secrets":{"example-service/token":42}}`},
+		{"duplicate secret", `{"version":1,"secrets":{"example-service/token":"one","example-service/token":"two"}}`},
 		{"second JSON", valid + ` {"version":1,"secrets":{}}`},
 		{"trailing garbage", valid + " synthetic-private-value"},
 	} {

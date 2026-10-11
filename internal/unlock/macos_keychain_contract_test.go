@@ -17,10 +17,14 @@ func TestMacOSKeychainTemporaryCFDataIsExplicitlyZeroed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read macOS adapter source: %v", err)
 	}
+	// Git may check out Go source with CRLF on Windows. Normalize only line
+	// endings; the zero-before-release sequence remains mandatory.
+	source = bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n"))
 	for _, required := range [][]byte{
 		[]byte("CFDataCreateMutable"),
 		[]byte("CFDataGetMutableBytePtr"),
-		[]byte("explicit_bzero"),
+		[]byte("#define __STDC_WANT_LIB_EXT1__ 1"),
+		[]byte("memset_s(value, valueLength, 0, valueLength)"),
 		[]byte("kinko_zero_cf_data(data)"),
 	} {
 		if !bytes.Contains(source, required) {
