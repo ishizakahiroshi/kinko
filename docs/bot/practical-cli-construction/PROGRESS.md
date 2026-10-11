@@ -1,6 +1,6 @@
 # #P-20261011-012 kinko：構築の入口
 
-更新: 2026-10-11。対象/保存先: `ishizakahiroshi/kinko`（公開）。
+更新: 2026-10-12 JST。対象/保存先: `ishizakahiroshi/kinko`（公開）。
 branch: `dots/practical-cli-construction-P-20261011-012`。Draft PR base: `main`。
 挙動基準: `9d463955b06e5b25bc5c80492eb1ded4f5761fe9`。
 管理 Issue: https://github.com/ishizakahiroshi/kinko/issues/1 。状態の正本は管理 Issue コメント。
@@ -14,7 +14,19 @@ branch: `dots/practical-cli-construction-P-20261011-012`。Draft PR base: `main`
 
 指示 SHA、code SHA、review SHA、看板 commit は別々に管理する。看板自身の commit は履歴/後続 receipt で読む。実値と私有 locator を載せない。
 
-## 2026-10-11 修正候補と独立レビューの提出
+## 2026-10-12 手元の最終検収
+
+修正コードは `660417bfef87c9d615fe0c935c9a74c93f22f875`。手元担当が固定 commit object の全差分と blob を確認して案件 branch へ公開した。下の提出時点の ref 未更新・検査待ちは、この検収で解消した。文書自身の最終 SHA は PR head / Issue receipt で確認する。
+
+- Windows の全 package test / vet / Go format、production main を呼ぶ別プロセスの合成一連操作・余分引数拒否・閉 stdout 検査が成功。
+- [Go CI run 38151204605](https://github.com/ishizakahiroshi/kinko/actions/runs/38151204605) は成功。Go 1.27.2 の Windows / macOS / Ubuntu test・vet、Ubuntu の実 race step、govulncheck を確認した。到達可能な脆弱性0、未到達の module 警告3件。[secrets-scan run 38151204607](https://github.com/ishizakahiroshi/kinko/actions/runs/38151204607) も成功。
+- 独立レビューは `REVIEW_RESULTS.md` の固定コードを対象とする。P2 3件は修正済み、追加 blocking finding なし。提出文書6件の SHA-256 と bytes を手元で照合した。
+- 実 COM 可否照会は `device-not-present`。symlink alias test は **skip なしで成功**した。提出時の skip 記載は誤りで、実行ログに従い訂正する。対話認証・credential 操作は未実施。
+- 文書だけの後続 commit はコード・依存・CI 設定を変更しない。最終 PR head と資料込みの私有 watchlist scan は Issue receipt に記録する。
+
+通常のパスワード方式の候補構築と自動検収を完了した。Draft PR は main 未反映、配布 artifact / release / deploy は未実施。実機 Hello / Keychain / Secret Service と運用 filesystem の確認は別ゲート。
+
+## 2026-10-11 UTC 提出時点の記録（後続検収前）
 
 - Draft PR: https://github.com/ishizakahiroshi/kinko/pull/2 。remote head は `ffcf35c9271490636370e58224c4d4215cd4e6c5`（15:24 UTC 確認）。main `ad842a4f56427871ccb4386d1ff125a99ab9850a` の保存競合・scanner・portfolio 改善を統合済み。
 - code commit object / 独立 review 対象: `660417bfef87c9d615fe0c935c9a74c93f22f875`。P2 3件、Darwin zeroing、CRLF contract、CI toolchain を修正。ref 更新は取り消され、再試行せず公開保存の次指示待ち。
@@ -26,6 +38,6 @@ branch: `dots/practical-cli-construction-P-20261011-012`。Draft PR base: `main`
 
 ### 手元からの後続検査報告
 
-15:27 UTC 受付: Windows 660417bf の vet / 変更 Go format / scan（58 files）は成功。CLI / unlock test は成功、vault test は実行中。COM の read-only 確認は device-not-present、symlink alias は skip であり、成功に数えない。対話 Hello は未実施。この報告は独立担当自身の Go 実行ではない。文書のみの追加 commit object を660417bfの子として作る許可を受けたが、remote ref 更新は禁止のまま。最終 CI と HTML の判定は、手元担当の確定結果を照合して更新する。
+15:27 UTC 受付: Windows 660417bf の vet / 変更 Go format / scan（58 files）は成功。CLI / unlock test は成功、vault test は実行中。COM の read-only 確認は device-not-present、symlink alias の skip 記載は上の手元検収で訂正した。対話 Hello は未実施。この報告は独立担当自身の Go 実行ではない。文書のみの追加 commit object を660417bfの子として作る許可を受けたが、remote ref 更新は禁止のまま。最終 CI と HTML の判定は、手元担当の確定結果を照合して更新する。
 
 文書6 files は同じ scanner の file 列挙のみをメモリ上で固定して read-only 検査し、exit 0（0 private needles + 4 structural patterns）。公開前の private watchlist 込み scan は手元担当で確認する。
