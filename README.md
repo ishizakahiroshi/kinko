@@ -75,6 +75,14 @@ kinko unlock setup --dry-run
 `add` の値をコマンドライン引数で渡すこともできますが、プロセス一覧やシェル履歴に
 残るため非推奨です。
 
+`init` の余分な引数、`list` の2個以上の引数、空の名前、不正な option は入力前に拒否します。
+`add` の複数の値引数は従来どおり space で結合します。`-` で始まる名前には
+`kinko get -- -example` のように `--` を指定してください。non-TTY の値省略 `add` は
+「値1行、password 1行」の順です。`get` は末尾改行を付けず、stdout の書込み失敗は非0終了です。
+
+新しい一時保管庫で一連の操作を試す手順と、実値を含まないテンプレートを
+[合成データの例](examples/README.md) に用意しています。
+
 ## 子プロセスへ秘密を渡す
 
 実値を含まないテンプレートを作ります。このテンプレートはリポジトリで管理できます。
@@ -138,7 +146,9 @@ format 1の任意metadataとして`vault_id`を使う方式は2026-08-13に承�
 
 - 暗号化は [age](https://github.com/FiloSottile/age) に委ね、独自暗号を実装しない
 - 値だけでなく名前も暗号化し、利用サービス名を vault file に残さない
-- 保存は一時 file へ書き切ってから置き換え、途中失敗で既存 vault を直接壊さない
+- 保存は暗号化済み一時 file を sync/close 後に置き換え、公開前の失敗で既存 vault を直接壊さない
+- writer lock と読込時の暗号文 fingerprint を比較し、競合は開き直しを求めて拒否する
+- 復号は age の認証された終端まで読み、余分な JSON と不正な format version を拒否する
 - env template に missing reference があれば、空値で子プロセスを起動せず失敗する
 - 保管庫全体を開ける `KINKO_PASSWORD` は、`run` の子プロセスへ継承しない
 
@@ -158,6 +168,17 @@ format 1の任意metadataとして`vault_id`を使う方式は2026-08-13に承�
 
 パスワードを忘れた場合の復旧手段はありません。`kinko export` で別パスワードの
 バックアップを作り、保管庫本体とは別の安全な場所へ置いてください。
+
+同じ vault の同時書込みは、片方を明示的に拒否します。競合したコマンドは最新の vault を
+開き直して再実行してください。lock は正規化した対象パスに `.lock` を付けた空ディレクトリで、
+正常終了・通常エラー時に解除します。異常終了で残った lock は自動削除しません。
+すべての writer の終了と対象を確認してから、その空の lock だけを手動で取り除いてください。
+
+既存の export 先は上書きせず、完成した暗号文だけを新規公開します。旧 format 1 の source に
+ID が無い場合は source を一度保存して ID を付け、backup に同じ ID を引き継ぎます。
+新規作成には hard link を使うため、対応するローカル filesystem が必要です。
+network/sync filesystem、hard-link 別名、第三者による directory/lock 変更への排他保証はありません。
+[保存手順と制約](docs/reference_architecture.md#保存手順) も確認してください。
 
 ## 安全性の境界
 
@@ -207,3 +228,6 @@ pwsh -File scripts/install-hooks.ps1
 ## ライセンス
 
 [MIT License](LICENSE)
+
+FAT / exFAT など hard link 非対応 FS での新規作成・export は非対応であり、安全に失敗する。
+未検証の FS を対応済みとは扱わない。

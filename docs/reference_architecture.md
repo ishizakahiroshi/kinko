@@ -2,7 +2,7 @@
 type: reference
 status: stable
 tags: [architecture, security, age]
-last_reviewed: 2026-08-13
+last_reviewed: 2026-10-11
 ---
 
 # kinko architecture reference
@@ -64,7 +64,8 @@ rename する。暗号文の書き込み途中で失敗したとき、既存フ�
 ための設計である。
 
 これは完全なクラッシュ耐性を意味しない。ディレクトリ metadata の fsync、複数世代の
-自動バックアップ、同時更新のロックは実装していない。
+自動バックアップは実装していない。現在は writer lock と暗号文 snapshot 比較で協調 writer の
+競合を拒否する。network/sync filesystem や非協調 writer まで排他できるものではない。
 
 ### 5. 強い資格情報を子プロセスへ渡さない
 
@@ -140,8 +141,12 @@ Credential Managerを読む`application-gated`、macOSはKeychain access control
 この JSON 全体を age で暗号化する。値だけでなく名前も暗号文の中に入るため、保管庫
 ファイルを読んだだけでは、利用サービスや用途の名前も分からない。
 
-現在の format version は `1`。新しい `kinko` が作った未対応の future version は拒否し、
-更新を促す。2026-08-13に承認した方式では`vault_id`を旧format 1に無い場合も読める任意metadataとして扱い、
+現在の format version は `1`。version は整数の `1` だけを受理し、未指定・0・負数・null は拒否する。
+future version は更新を促す。`secrets` は object が必須で、未指定・null は拒否する。
+age 復号後の JSON object は1個だけとし、二度目の Decode が認証済み EOF に到達することを要求する。
+これにより複数 age chunk にまたがる末尾空白の先の切断・改変も拒否する。JSON 末尾の別 object / garbage、
+重複 top-level field も拒否する。未知の任意 metadata は次回保存・export でも保持する。
+JSON / stream error の詳細に平文が混ざらないよう、診断は固定文面にする。2026-08-13に承認した方式では`vault_id`を旧format 1に無い場合も読める任意metadataとして扱い、
 新規作成または次回の成功した保存で付与する。旧binaryが未知fieldを落として保存するとIDが消えるため、
 端末解除はstale credentialとして停止するが、master passwordによる復旧は残る。別々に作成したvaultには
 異なるIDを付け、同じpasswordでも取り違えを検出する。export backupはsourceのIDを引き継ぎ、同じ論理vault
@@ -149,16 +154,38 @@ Credential Managerを読む`application-gated`、macOSはKeychain access control
 
 ## 保存手順
 
+`Create` / `Open` は絶対パス化し、対象および親 directory の symlink を解決する。
+対象は通常 file に限り、dangling symlink は拒否する。`Open` は暗号文の SHA-256 fingerprint を
+memory に保持する。これは更新検出用で、暗号認証の代替ではない。
+
 `Vault.Save` は次の順序で処理する。
 
-1. 保管庫の親ディレクトリを作る
-2. age の scrypt recipient を作る
-3. JSON 全体を age の暗号文へ変換する
-4. 同じディレクトリに一時ファイルを作る
-5. Unix 系では一時ファイルを mode `0600` にする
-6. 暗号文を書き、file sync、close を行う
-7. 一時ファイルを保管庫パスへ rename する
-8. 失敗時に残った一時ファイルを削除する
+1. `<正規化対象>.lock` を排他的 mkdir で作る。存在すれば待たずに `ErrLocked`
+2. lock 内で現在の暗号文 fingerprint と読込時 snapshot を比較。不一致・削除は `ErrConflict`
+3. 任意の vault ID が無ければ付与し、JSON 全体を age の暗号文へ変換
+4. 同じ directory に暗号化 temp を作り、Unix 系では mode `0600` にする
+5. 暗号文を write、file sync、close
+6. 更新は temp を対象へ rename。新規作成 / export は hard link で完成済み temp を公開し、
+   既存の名前があれば原子的に拒否する。Stat→Rename だけで新規を作らない
+7. 成功後に snapshot を更新。自分の temp を best-effort 削除し、lock を解除
+
+公開前の保存・置換失敗では元の暗号文を保持する。競合した snapshot は自動再試行しない。
+`export` は空の destination を先に作らず、公開失敗後に destination を削除しない。
+旧 format 1 の source に ID が無い場合は source を先に保存し、同じ ID を copy する。
+backup の公開が失敗しても、この互換 metadata の付与は残り得る。
+
+lock は異常終了後も残る。時間や PID で奪うと生存 writer を誤判定できるため、自動回収しない。
+すべての writer が終了したことと正規化対象を利用者が確認してから、空の lock だけを取り除く。
+通常エラーでは defer で解放し、lock 解放の失敗も報告する。公開後の lock 解放失敗では保存自体は
+完了している可能性があるため、状態を開き直して確認する。異常終了や OS cleanup エラーで残った
+`.kinko-*.tmp` には暗号文だけが入る。
+
+排他の前提は同じ実装を使う協調 writer と、mkdir / hard link / rename を提供するローカル FS。
+既存 symlink alias は同じ lock へ解決するが、hard-link 別名、network/sync FS、第三者による
+親 directory・symlink・lock の差替え、旧 writer / 非協調 writer は保証外。
+新規作成は hard link 非対応 FS では失敗し、危険な上書き方式へ fallback しない。
+1個の `Vault` の同時 goroutine 利用は非対応で、各操作で別の `Open` を使う。
+provider の path-based credential route は既存互換のため変えていない。
 
 Windows では mode bit より ACL が優先される。既定保存先はユーザー設定ディレクトリだが、
 `KINKO_VAULT` で共有ディレクトリを指定した場合の ACL までは `kinko` が構成しない。
@@ -197,7 +224,7 @@ future formatは更新を要求し、provider credentialのvault ID不一致はs
 - swap、hibernation、crash dump に平文が残る可能性
 - 弱いマスターパスワードに対するオフライン推測
 - 破損、誤削除、パスワード忘れからの自動復旧
-- 複数プロセスによる同時更新
+- lock を守らない writer、hard-link 別名、network/sync FS による同時変更
 
 ## 運用上の不変条件
 
@@ -208,7 +235,7 @@ future formatは更新を要求し、provider credentialのvault ID不一致はs
 - `export` のバックアップを本体とは別の安全な場所へ置く
 - `export` はsource vaultの`vault_id`を引き継ぎ、backupから復元したときのprovider照合を保つ
 - パスワード変更は、別パスワードへの `export` と切替で行う
-- 同じ保管庫へ複数の writer を同時に走らせない
+- 競合エラーを無視せず最新の vault を開き直し、旧 writer と混在させない
 
 ## 非目標
 
@@ -231,7 +258,12 @@ future formatは更新を要求し、provider credentialのvault ID不一致はs
 | 暗号化後に同じ値を復元できる | `Test保管庫は書いた内容をそのまま読み戻せる` |
 | 誤パスワードを拒否する | `Test違うパスワードでは開けない` |
 | 名前と値が暗号文へ平文で残らない | `Test保管庫のファイルに平文が残らない` |
-| 既存保管庫を `Create` で上書きしない | `Test既存の保管庫を上書きしない` |
+| 既存保管庫を `Create` で上書きしない | `Test既存の保管庫を上書きしない`, `TestConcurrentInitProcessesPublishExactlyOnce` |
+| stale snapshot を拒否する | `TestStaleSnapshotCannotLoseAnotherUpdate`, `TestStaleProcessCannotOverwriteAnotherProcess` |
+| symlink alias / crash lock | `TestSymlinkAliasesShareLockAndSnapshot`, `TestCrashedWriterLockIsNeverStolen` |
+| 置換失敗・temp cleanup | `TestReplacementFailurePreservesOriginalAndReleasesLock` |
+| age EOF / JSON / version を厳格に読む | `TestOpenRejectsInvalidJSONVersionAndUnauthenticatedEOF` |
+| 未知の任意 metadata を保持 | `TestUnknownMetadataSurvivesSaveAndExport` |
 | 保存前の失敗で既存内容を壊さない | `Test保存に失敗しても既存の保管庫を壊さない` |
 | format 1 legacy / vault ID互換 | `Test既存format1はVaultIDなしでも開けて次回保存で付与される` |
 | provider credentialとvaultの取り違えを止める | `TestOpenVaultProviderMismatchStopsWithoutPasswordFallback` |
@@ -242,6 +274,13 @@ future formatは更新を要求し、provider credentialのvault ID不一致はs
 | 子へマスターパスワードを渡さない | `TestChildEnvironmentDoesNotInheritVaultPassword` |
 | テンプレートで予約変数を再注入させない | `TestExpandRejectsReservedPasswordVariable` |
 
-実プロセスを使う smoke test は、合成データで
-`init -> add -> get -> list -> run -> export -> rm` を確認している。release 前には、対象 OS の
-成果物でも同じ境界を再確認する必要がある。
+`TestDailyWorkflowInSubprocesses` は Go test executable から production command 関数を呼び、合成データの
+`init -> add -> get -> list -> run -> export -> backup reopen -> rm`、子の input/output/exit と
+case-insensitive password 非継承を検査する。`TestGetClosedStdoutFailsInSubprocess` は get 出力失敗、
+`TestInvalidArgumentsDoNotConsumeInputOrCreateVault` は入力前の拒否を検査する。
+この helper は main の dispatch/exit 写像を模倣するので、実 CLI executable の end-to-end 検収とは区別する。
+各 SHA で何が実行できたか、skip と実機未確認は案件 report に記録し、test の存在だけで成功としない。
+release 前には対象 OS の実 CLI と native user-presence を別々に再確認する必要がある。
+
+FAT / exFAT など hard link 非対応 FS での新規作成・export は非対応であり、安全に失敗する。
+未検証の FS を対応済みとは扱わない。

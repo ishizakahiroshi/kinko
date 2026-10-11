@@ -87,6 +87,11 @@ func OpenVault(ctx context.Context, path string, options OpenOptions) (*OpenResu
 		case <-providerCtx.Done():
 			result.err = providerErrorForContext(providerCtx.Err())
 		}
+		// A result and cancellation may both be ready. Cancellation must win
+		// even if select picked a fallback-permitted provider error.
+		if contextErr := providerCtx.Err(); contextErr != nil {
+			result.err = providerErrorForContext(contextErr)
+		}
 		cancel()
 		credential, providerErr := result.credential, result.err
 

@@ -297,3 +297,25 @@ func createTestVault(t *testing.T) (string, string) {
 	}
 	return path, created.VaultID()
 }
+
+func TestCanceledContextCannotRaceIntoPasswordFallback(t *testing.T) {
+	path, _ := createTestVault(t)
+	for i := 0; i < 20; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		provider := &FakeProvider{UnlockErr: NewProviderError(ErrorUnavailable)}
+		readerCalled := false
+		result, err := OpenVault(ctx, path, OpenOptions{
+			Provider:    provider,
+			Interactive: true,
+			ReadPassword: func(string) (string, error) {
+				readerCalled = true
+				return testMasterPassword, nil
+			},
+		})
+		assertProviderErrorKind(t, err, ErrorCanceled)
+		if result != nil || readerCalled {
+			t.Fatal("canceled provider attempt fell back to password")
+		}
+	}
+}

@@ -2,13 +2,21 @@
 type: reference
 status: stable
 tags: [cli, reference]
-last_reviewed: 2026-08-23
+last_reviewed: 2026-10-11
 ---
 
 # kinko CLI reference
 
 この文書は現在の CLI 契約を、コマンド、入出力、環境変数、env テンプレートの順に
 まとめる。背景と安全性の境界は [Architecture reference](reference_architecture.md) を参照。
+
+## 引数の事前検証
+
+`init` は引数なし、`get` / `rm` / `export` はちょうど1個、`list` は0〜1個を要求する。
+誤った個数、空白だけの名前、先頭の不明 option は password/value 入力と vault 変更の前に拒否する。
+名前や出力先が `-` で始まる場合は `get -- -example` のように `--` を先に置く。
+`add` の2個目以降は従来どおり値であり、`--word` も値の一部として space で結合する。
+`help` / `version` の余分な引数も拒否する。
 
 ## コマンド一覧
 
@@ -38,7 +46,10 @@ kinko add example-service/api-token <値>
 ```
 
 - 値を省略すると、端末では画面に表示しない入力を使う
-- 非 TTY の標準入力では 1 行を値として読む
+- 非 TTY の標準入力では 1 行を値として読み、その後に password を1行読む
+  （`KINKO_PASSWORD` があれば password 行は不要）
+- 先読みで次の行を消費しない。値入力の EOF / read error は保存前に失敗する
+- 空値を入力する場合も空の1行を渡す。入力自体の省略とは区別する
 - 値を引数で渡した場合は、process list と shell history に残る警告を標準エラーへ出す
 - 名前の前後の空白は除去し、空の名前は拒否する
 - 空文字の値は保存できる
@@ -57,6 +68,8 @@ kinko get example-service/api-token
 
 - 出力末尾に改行を付けない
 - 値以外を標準出力へ混ぜない
+- stdout の error / short write は失敗とし、値や writer の error 本文を診断へ混ぜない
+  （OS の broken-pipe 終了も非0。途中まで出力済みの bytes は取り消せない）
 - 名前の前後の空白は除去してから探す
 - 名前が無い場合は失敗する
 - パスワード prompt は TTY の標準エラーへ出す
@@ -101,6 +114,8 @@ kinko run --env-file=.env.tmpl -- your-command --flag
 
 - `--env-file <path>` と `--env-file=<path>` を受け付ける
 - command の option と区別するため `--` separator の使用を推奨する
+- `--env-file` の重複、空の path、不明な run option、空の command は vault 入力前に拒否する
+- separator を省略する場合、最初の option ではない引数を command として扱う
 - 標準入力、標準出力、標準エラーを子プロセスへ接続する
 - 子が非 0 で終了した場合、その exit code で `kinko` も終了する
 - command を起動できない場合は通常の `kinko` error として終了する
@@ -127,12 +142,16 @@ kinko export backups/kinko-vault.age
 - source vaultを通常の解除優先順位で開く（TTYではproviderを一度試す）
 - 出力先のパスワードを求め、空なら元と同じパスワードを使う
 - 別パスワードを指定する場合は 8 文字（文字数、byte数ではない）以上を要求する
-- 出力先ファイルを作った後、書き出しの途中で失敗した場合はその出力先ファイルを
-  best-effort で削除する。再実行が「出力先が既にあります」で拒否され続けることを防ぐ
+- 完成・sync・close した暗号文だけを no-overwrite で公開し、途中の空 vault は作らない
+- 公開失敗時は自分の暗号化 temp だけを掃除する。他の writer の出力先を削除しない
+- `vault_id` と未知の任意 metadata を引き継ぐ。旧 format 1 source に ID がない場合は
+  source の保存を先に行う。出力先が後で失敗しても、この ID 付与は残る
 - 成功時は件数と出力先を標準エラーへ出す
 
 `KINKO_PASSWORD` を設定した場合、sourceと出力先のすべての password prompt が同じ環境変数値を返す。
-そのため、非対話の `export` では別の出力先パスワードを指定できず、元と同じ値になる。
+その環境変数を使う非対話 `export` では元と同じ値になる。環境変数を設定せず stdin から
+「source password、destination password」の順に2行渡す場合は別 password を指定できる。
+2行目が空なら source と同じものを使う。
 
 export 先は通常の vault と同じ形式である。`KINKO_VAULT` へそのパスを指定すれば開ける。
 専用の import command は現在ない。
@@ -312,3 +331,22 @@ kinko_password=value
 | `help` | `--help`, `-h` |
 
 新しい automation は正式名を使うことを推奨する。
+
+## 保存競合と lock の扱い
+
+- 開いた時点の暗号文 fingerprint と、保存直前の暗号文を writer lock 内で比較する。
+  変わっていた場合は `ErrConflict` で拒否し、古い snapshot を上書きしない。
+- lock 使用中は待たずに `ErrLocked` で失敗する。自動リトライや自動マージは行わない。
+  最新の vault を開き直してコマンドを再実行する。
+- 対象パスと親 directory の symlink は正規化して同じ lock を使う。dangling symlink は拒否する。
+  OS provider の既存 credential route は変更していないため、端末解除では登録時のパスを使う。
+- 異常終了で残る `<正規化対象>.lock` は自動で奪わない。全 writer の終了と対象を確認してから
+  空の lock directory だけを手動削除する。通常のエラーでは自動解放する。
+- 同じ `Vault` 値の goroutine 同時利用、hard-link 別名、network/sync filesystem、第三者が
+  directory/lock を差し替える状況は対象外。新規作成 / export は hard link 非対応 FS では安全に失敗する。
+- 旧 writer と混在させない。lock を守らない process の直接上書きは防げない。
+
+[合成データの一連操作](../examples/README.md) は、名前だけの template と値を表示しない子 command を含む。
+
+FAT / exFAT など hard link 非対応 FS での新規作成・export は非対応であり、安全に失敗する。
+未検証の FS を対応済みとは扱わない。
