@@ -83,7 +83,7 @@ func (v *Vault) checkSnapshot() error {
 		return fmt.Errorf("kinko: 保管庫を確認できません: %w", err)
 	}
 	if !v.loaded {
-		return errors.New("kinko: 保管庫が既にあります")
+		return fmt.Errorf("kinko: 保管庫が既にあります: %w", ErrConflict)
 	}
 	if !info.Mode().IsRegular() {
 		return ErrConflict

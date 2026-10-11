@@ -34,8 +34,12 @@ func TestInvalidArgumentsDoNotConsumeInputOrCreateVault(t *testing.T) {
 		{"rm extra", func() error { return RemoveWithOptions([]string{"name", "extra"}, CommandOptions{}) }},
 		{"export empty", func() error { return ExportWithOptions([]string{" "}, CommandOptions{}) }},
 		{"export extra", func() error { return ExportWithOptions([]string{"one", "two"}, CommandOptions{}) }},
-		{"run option", func() error { return RunWithOptions([]string{"--env-file", "example.env", "--invalid"}, CommandOptions{}) }},
-		{"run duplicate", func() error { return RunWithOptions([]string{"--env-file=a", "--env-file=b", "--", "example"}, CommandOptions{}) }},
+		{"run option", func() error {
+			return RunWithOptions([]string{"--env-file", "example.env", "--invalid"}, CommandOptions{})
+		}},
+		{"run duplicate", func() error {
+			return RunWithOptions([]string{"--env-file=a", "--env-file=b", "--", "example"}, CommandOptions{})
+		}},
 		{"run missing command", func() error { return RunWithOptions([]string{"--env-file=a", "--"}, CommandOptions{}) }},
 		{"unlock option", func() error { return UnlockWithOptions([]string{"setup", "--invalid"}, CommandOptions{}) }},
 	}

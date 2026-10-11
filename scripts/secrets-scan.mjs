@@ -8,7 +8,7 @@
 // 新しい watchlist テーブルは作らない（id 正典・名前派生の kb 設計を維持）。
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
 // === Configuration ===
@@ -42,7 +42,7 @@ const MAX_FILE_SIZE = 1024 * 1024;
 // メールアドレスは構造 regex で全件検知し、「公開する前提のアドレス」だけをここで通す。
 // 非公開アドレスそのものは絶対にここへ書かない（allowlist 方式なら書かずに防げる）。
 const ALLOWED_EMAILS = [
-  'ishizakahiroshi.dev@gmail.com', // 公開コミット名義・package manifest 用
+  'ishizakahiroshi.dev@gmail.com', // 公開コミット名義・package manifest 用; doxguard: allow ishizakahiroshi.dev@gmail.com
 ];
 const ALLOWED_EMAIL_DOMAINS = [
   'users.noreply.github.com',  // GitHub の noreply
@@ -80,8 +80,8 @@ function isAllowedEmail(matched) {
 // 衝突して誤検知だけを生む場合にここへ書く。括弧付きフル名（例: 'ServiceName(CompanyName)'）と
 // servers.csv のホスト名は引き続き検知されるため、会社との紐付き漏洩は別途捕捉される。
 const ALLOWED_PUBLIC_NAMES = [
-  'Nextcloud', // 公開 OSS 製品名
-  'Portal',    // 一般英単語（社内ポータル台帳名の bare variant）
+  'Nextcloud', // 公開 OSS 製品名; doxguard: allow Nextcloud
+  'Portal',    // 一般英単語（社内ポータル台帳名の bare variant）; doxguard: allow Portal
 ];
 
 const BINARY_EXTS = new Set([
@@ -248,18 +248,22 @@ function getStructuralPatterns() {
 
 // === File listing per mode ===
 
+// -z keeps non-ASCII names and names containing whitespace or quotes intact.
+// Without it, Git may return quoted octal escapes that do not name a real file.
+function gitList(args) {
+  return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+    .split('\0').filter(Boolean);
+}
+
 function getFilesByMode(mode) {
   try {
     switch (mode) {
       case 'staged':
-        return execSync('git diff --cached --name-only --diff-filter=ACM', { encoding: 'utf8' })
-          .trim().split('\n').filter(Boolean);
+        return gitList(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACM']);
       case 'files-from-diff':
-        return execSync('git diff --name-only --diff-filter=ACM HEAD', { encoding: 'utf8' })
-          .trim().split('\n').filter(Boolean);
+        return gitList(['diff', '--name-only', '-z', '--diff-filter=ACM', 'HEAD']);
       case 'all-tracked':
-        return execSync('git ls-files', { encoding: 'utf8' })
-          .trim().split('\n').filter(Boolean);
+        return gitList(['ls-files', '-z']);
       case 'packaged':
         console.error('ERROR: --packaged mode not yet implemented (TODO: read npm pack output for layer 4)');
         process.exit(2);
@@ -279,8 +283,8 @@ function getFilesByMode(mode) {
 // === Inline exempt directive ===
 // Lines containing `secrets-scan: allow` are exempted.
 //   `secrets-scan: allow`            -> allow all hits on this line
-//   `secrets-scan: allow Nextcloud`  -> allow only matches whose needle
-//                                       contains (case-insensitive) "Nextcloud"
+//   `secrets-scan: allow ExampleProduct` -> allow only matches whose needle
+//                                       contains (case-insensitive) "ExampleProduct"
 // Multiple directives per line are OR'd.
 function isAllowedByDirective(line, matchedNeedle) {
   const re = /secrets-scan:\s*allow(?:\s+([^\s\->]+))?/gi;
@@ -319,9 +323,8 @@ function isSkipFilename(path) {
 
 // === Short-needle boundary rule ===
 // 2 文字以下の watchlist 名は、そのままの部分文字列一致だと乱数めいた文字列に
-// 無数に当たる（実例: YouTube の動画 ID `5vudjnGWFKc` の中の `WF` が kb のアプリ名に
-// 一致して push がブロックされた・2026-08-30）。短い needle は「前後が英数字でない」
-// ときだけ一致させる。実際の言及（`WF の設定` / `（WF）` / 行頭・行末）は引き続き当たり、
+// 無数に当たる（動画 ID などのランダム文字列の一部分との衝突）。短い needle は「前後が英数字でない」
+// ときだけ一致させる。実際の言及（名前の前後が空白 / 括弧 / 行頭・行末）は引き続き当たり、
 // 検知の網は落ちない。3 文字以上は従来どおり素の部分文字列一致。
 const SHORT_NEEDLE_MAX = 2;
 const ALNUM = /[A-Za-z0-9]/;

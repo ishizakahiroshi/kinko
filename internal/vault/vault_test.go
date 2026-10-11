@@ -340,3 +340,53 @@ func writeEncryptedJSON(t *testing.T, path, password string, value any) {
 		t.Fatal(err)
 	}
 }
+
+// Keep the public main branch's concurrent-create regression after integration.
+func Test古い読み込みからの保存は競合として拒否される(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vault.age")
+	if _, err := Create(path, testPassword); err != nil {
+		t.Fatal(err)
+	}
+	a, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Set("example-service/first", "synthetic-first"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Save(testPassword); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Set("example-service/second", "synthetic-second"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Save(testPassword); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale save must preserve ErrConflict")
+	}
+	current, err := Open(path, testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := current.Get("example-service/first"); err != nil {
+		t.Fatal("the earlier update disappeared")
+	}
+}
+
+func TestCreateは保存時にも既存を置き換えない(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vault.age")
+	stale := &Vault{path: path, doc: document{Version: FormatVersion, Secrets: map[string]string{}}}
+	if _, err := Create(path, testPassword); err != nil {
+		t.Fatal(err)
+	}
+	before := readCiphertext(t, path)
+	if err := stale.Save(testPassword); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale create must return ErrConflict, got %v", err)
+	}
+	if !bytes.Equal(before, readCiphertext(t, path)) {
+		t.Fatal("stale create changed the existing ciphertext")
+	}
+}
