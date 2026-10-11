@@ -3,7 +3,7 @@
 更新: 2026-10-11。対象/保存先: `ishizakahiroshi/kinko`（公開）。
 branch: `dots/practical-cli-construction-P-20261011-012`。Draft PR base: `main`。
 挙動基準: `9d463955b06e5b25bc5c80492eb1ded4f5761fe9`。
-管理 Issue: 初回公開後に追記する。状態の正本は管理 Issue コメント。
+管理 Issue: https://github.com/ishizakahiroshi/kinko/issues/1 。状態の正本は管理 Issue コメント。
 
 | 工程 | 担当 | 証跡と残るゲート |
 |---|---|---|

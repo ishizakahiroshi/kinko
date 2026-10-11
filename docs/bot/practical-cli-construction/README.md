@@ -7,7 +7,7 @@
 - 挙動基準 SHA: `9d463955b06e5b25bc5c80492eb1ded4f5761fe9`。
 - 指示と現行 source の branch: `dots/practical-cli-construction-P-20261011-012`。main は古く、端末解除と監査修正が未反映。main だけを読んで実装しない。
 - 上記 branch の固定指示 commit を読んでから、同じ branch に実装・test・文書を保存し、main 向け Draft PR を提出する。既存修正を除去しない。main との全差分と、挙動基準からの今回差分を区別する。
-- 管理 Issue: 初回公開後に本書と PROGRESS.md へ追加する。依頼者が作成したこの Issue だけに状態を記録する。
+- 管理 Issue: https://github.com/ishizakahiroshi/kinko/issues/1 。依頼者が作成したこの Issue だけに状態を記録する。
 - 手元 Codex が全差分をレビューし、必要な修正を同じ会話で返す。独立 dots 担当のレビューは REVIEW.md に従う。
 
 ## 目的と完成する体験
