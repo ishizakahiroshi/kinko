@@ -23,4 +23,5 @@ last_reviewed: 2026-10-12
 - 製品source/test/deps/workflow/CLAUDE/READMEは変更せず、build/製品test/実金庫/credential/account操作なし。
 - 初回HTML静的検査、固定SHAのread-back、docs4ファイル差分、公式secrets-scan構造4規則で検出0を確認。私有watchlistは未設定。クラウドChromiumは既知socket EPERM制約。初回b5167cbの1280/500は手元が確認済みと報告。修正後最終版の実表示は手元検収待ち。
 - 最終提出SHA、review対象SHA、各成果path/bytes/SHA256、read-back、残件は自己参照を避けIssue5の後続receiptへ提出する。
-- 残件は手元の内容・1280/500表示検収、実利用前の保存先・控えの実態確認。今回の検討は採用待ちで止めず提出し、製品実装・接続へは進まない。
+- 手元は最終提出 `07f94b6572bfcb293b3aa79a9e94f596cab3db96` のparent・4file差分・全bytes/SHA256を照合し、修正後の内容とWindows Chrome幅1280px/500pxの実描画を検収。HTMLの補足リンクを固定SHAへ置換し、表示検収の記録のみ追記。方式本文・DESIGNは変更していない。最終資料SHAと検査receiptはIssue5に記録する。
+- 完了したのは方式検討・独立再レビュー・資料検収。残る本人側情報は実利用前の保存先・未転送期間の許容・控えの実態確認。採用・製品実装・接続・実復元は未実施。
