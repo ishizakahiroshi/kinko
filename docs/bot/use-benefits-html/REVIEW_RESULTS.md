@@ -50,3 +50,13 @@ GitHubから固定commitのHTMLをbase64で取得し、デコード後のbytes�
 kinkoのコマンド例、CLI、テストは実行していない。実vault・credential・API・passwordへアクセスしていない。source、test、依存、workflow、Git refを変更していない。
 
 内容上の修正要求はない。別commitを最終提出対象にする場合は、その固定commitのHTML blobとbytes・SHA256を再照合する。
+
+## 手元の後続内容確認（2026-10-12 JST）
+
+上記はdots独立担当の固定提出時点の記録。手元担当は提出commit 8ee993883cff12c42ef4948045c023322ab90a91 の3ファイルのbytes / SHA256を照合し、HTMLとレビュー全文を読んだ。
+
+追加の内容指摘1件: 「マスターパスワードを忘れると復旧できない」という一律の表現は、登録済みの別解除手段や別パスワードのbackupを考慮していなかった。「backupを開くにも、その暗号化に使ったパスワードが必要。ファイルの予備と開く手段の両方を確保」に訂正した。
+
+書式3件: docsweep-metaの開始行を正規形式へ、titleに日付、左側の装飾線を通常の囲みへ調整。図・コマンド例・3つの利点・安全境界は保持。製品sourceの変更はない。
+
+手元Chromeで1280px / 500pxの描画とPNG目視が成功し、図の対応・狭幅時の縦並び・コードの折返し・本文末尾まで確認した。JS/フォームなし。HTML metadataのstatusをdoneへ進めた。最終HTML hashと文書commitは管理Issueの最終検収receiptへ記録する。上の独立担当の未実施記録は提出時点の履歴として残す。

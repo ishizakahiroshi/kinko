@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<!-- docsweep-meta:
+<!--docsweep-meta
 type: design
-status: planned
+status: done
 tags: [kinko, usage, benefits]
 owner: ishizakahiroshi
 related: []
@@ -13,7 +13,7 @@ docsweep_policy: archive_with_release
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="kinkoで実値入り.envを暗号化金庫と参照テンプレートに置き換えると、毎日の開発がどう変わるかを説明します。">
-<title>kinkoを使うと、何が嬉しい？ | 設定の構造はAIに、秘密の値はアプリへ</title>
+<title>kinkoを使うと、何が嬉しい？ — 2026-10-12</title>
 <style>
   :root {
     --bg:#f7f3ea; --ink:#241f1a; --ink-soft:#837a6c; --line:rgba(36,31,26,0.12);
@@ -78,7 +78,7 @@ docsweep_policy: archive_with_release
   .ai-node{background:#f7f3ea}
   .app-node{background:#fff0e5;border-color:#e9a580}
   .caption{margin:12px 0 0;color:#62584c;font-size:0.84rem}
-  .takeaway{margin:20px 0 0;padding:12px 16px;border-left:5px solid var(--accent);background:#fff0e5}
+  .takeaway{margin:20px 0 0;padding:12px 16px;border:1px solid var(--ink);background:#fff0e5}
   .benefits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
   .benefits .card{margin:0;padding:20px;min-width:0}
   .benefits h3{margin:0 0 8px;font-size:1.08rem}
@@ -195,7 +195,7 @@ APP_MODE=development</code>
 kinko add example-service/db-password</code></pre><p class="note">値を引数に書くと、シェル履歴やプロセス一覧に残る場合があります。</p></div></li>
       <li><div><h3>名前を確認し、参照テンプレートを用意する</h3><p><code>list</code>は名前だけを表示します。図の<code>.env.tmpl</code>を用意し、秘密の部分を下の形で参照します。</p><pre><code>kinko list</code></pre><pre><code>API_TOKEN=${kinko:example-service/api-token}</code></pre><p class="note">切替後も元の実値入り<code>.env</code>が残れば、そのファイルを読むリスクは残ります。kinkoは既存ファイルを自動で移行・削除しません。</p></div></li>
       <li><div><h3>普段は、実値を表示せずアプリへ渡す</h3><p>金庫を開き、参照を実値に置き換えてアプリを起動します。参照先が未登録なら、アプリは起動せずエラーになります。</p><pre><code>kinko run --env-file .env.tmpl -- your-command</code></pre></div></li>
-      <li><div><h3>必要なときに、暗号化バックアップを作る</h3><p>新しい出力先を指定します。マスターパスワードを忘れると復旧できないため、バックアップは本体とは別の安全な場所に保管します。</p><pre><code>kinko export backup.age</code></pre></div></li>
+      <li><div><h3>必要なときに、暗号化バックアップを作る</h3><p>新しい出力先を指定し、本体とは別の安全な場所に保管します。バックアップを開くにも、その暗号化に使ったパスワードが必要です。ファイルの予備と、開くための手段の両方を確保します。</p><pre><code>kinko export backup.age</code></pre></div></li>
     </ol>
   </section>
 
