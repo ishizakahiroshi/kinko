@@ -10,7 +10,7 @@ last_reviewed: 2026-10-12
 # #P-20261012-004 kinko 復旧方式の検討入口
 更新日: 2026-10-12。
 公開保存先/作業repo: ishizakahiroshi/kinko、専用branch dots/vault-recovery-design-P-20261012-004。
-管理Issueは公開後に追記。
+管理Issue: https://github.com/ishizakahiroshi/kinko/issues/5 。
 状態の正本は管理Issueのコメント。今回の検討は前調査の再起動ではない。
 - 指示: README.md / FACTS.md / REVIEW.md / STYLE.md
 - 成果: design_kinko-recovery-proposal_2026-10-12.html / DESIGN.md / REVIEW_RESULTS.md

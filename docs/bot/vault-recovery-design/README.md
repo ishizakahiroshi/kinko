@@ -26,7 +26,7 @@ last_reviewed: 2026-10-12
 挙動source SHA: 503c7d9f10536a06ed1581e93f597fe8913bd94b。
 参照する前案件の資料SHA: 77be9f6ab436d4d3c451ab7d45e29f3f230342f3。
 基準branchにはその資料と製品sourceが含まれる。前案件を再起動しない。
-管理Issueは公開後に追記する。
+管理Issue: https://github.com/ishizakahiroshi/kinko/issues/5 。状態の正本は本Issueのコメント。
 
 ## 検討すべきこと
 1. **事故と守れる範囲**: 項目誤削除/誤更新、金庫file全削除/破損、PC全損、マスターパスワード紛失、端末解除機能の消失を分ける。悪意あるOS管理者、侵害済OS、全copyと全解除手段の同時喪失まで救えると主張しない。
