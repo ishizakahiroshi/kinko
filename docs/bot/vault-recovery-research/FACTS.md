@@ -16,7 +16,7 @@ last_reviewed: 2026-10-12
 - backupを開くにはKINKO_VAULTをそのfileへ向け、backup用master password等の解除手段を使う。OS providerにはvault passwordとIDが保存されるが、実機acceptanceは未完了。
 - master password紛失だけで必ず復旧不能とは限らない。使用可能なOS provider、別passwordで作ったbackupなどを区別する。
 - ファイルの保存保護、合成roundtrip成功は、実ディスク故障からの復旧やpower-loss耐久保証とは別。
-根拠: internal/vault/vault.go（Create, Delete, Save）、internal/cli/export.go、internal/unlock/、docs/reference_architecture.md（保存、backupからの復元、安全性境界）。
+根拠: internal/vault/vault.go（Create, Delete, Save）、internal/cli/run.go（ExportWithOptions）、internal/unlock/、docs/reference_architecture.md（保存、backupからの復元、安全性境界）。
 参照: 上記source（全文が長く、関数と根拠を調査担当が直接確認するため）。
 1Passwordの現行仕様はこのFACTSでは未確認。公式取得が本依頼の作業である。
 
