@@ -18,7 +18,7 @@ last_reviewed: 2026-10-12
 対象・保存先は公開repo ishizakahiroshi/kinko。
 専用branch: dots/vault-recovery-research-P-20261012-003。
 資料は docs/bot/vault-recovery-research/ のみ。挙動基準source SHA: 503c7d9f10536a06ed1581e93f597fe8913bd94b。
-管理Issueは公開後にこの文書へ追加する。最新入口は同階層PROGRESS.md。
+管理Issue: https://github.com/ishizakahiroshi/kinko/issues/4。最新入口は同階層PROGRESS.md。
 
 ## 調査
 1. 1Passwordの現在の公式support/security資料を実際に取得し、各主張にURL、取得日、対象版/プラン、短い根拠、復元条件・期限・権限・限界を記録する。個人/家族/組織と現行サブスクリプション/旧standaloneの違いを混同しない。
