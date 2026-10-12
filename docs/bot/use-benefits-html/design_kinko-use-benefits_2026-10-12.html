@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<!-- docsweep-meta:
+type: design
+status: planned
+tags: [kinko, usage, benefits]
+owner: ishizakahiroshi
+related: []
+last_reviewed: 2026-10-12
+docsweep_policy: archive_with_release
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="kinkoで実値入り.envを暗号化金庫と参照テンプレートに置き換えると、毎日の開発がどう変わるかを説明します。">
+<title>kinkoを使うと、何が嬉しい？ | 設定の構造はAIに、秘密の値はアプリへ</title>
+<style>
+  :root {
+    --bg:#f7f3ea; --ink:#241f1a; --ink-soft:#837a6c; --line:rgba(36,31,26,0.12);
+    --accent:#ff7a3d; --card:#fffdf8; --ok:#2e7d4f; --warn:#b8860b; --bad:#b3261e;
+    --display:'Baloo 2','Zen Maru Gothic',system-ui,cursive;
+    --body:'Zen Maru Gothic',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:var(--body);color:var(--ink);background:var(--bg);line-height:1.7;
+       text-wrap:pretty;font-size:16px}
+  .wrap{max-width:min(1080px,92vw);margin:0 auto;padding:48px 0 80px}
+  h1{font-family:var(--display);font-weight:800;font-size:2rem;margin:0 0 12px;letter-spacing:-0.01em}
+  h2{font-family:var(--display);font-weight:700;font-size:1.4rem;margin:48px 0 16px;
+     padding-bottom:8px;border-bottom:2px solid var(--ink)}
+  h3{font-family:var(--display);font-weight:700;font-size:1.1rem;margin:28px 0 10px}
+  p,li{font-size:1rem}
+  a{color:var(--accent);text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px}
+  .card{background:var(--card);border:2px solid var(--ink);border-radius:18px;
+        padding:22px 24px;box-shadow:4px 5px 0 var(--line);margin:16px 0}
+  table{width:100%;border-collapse:collapse;margin:12px 0;background:#fff;
+        border:2px solid var(--ink);border-radius:12px;overflow:hidden}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line);font-size:0.94rem}
+  th{background:#fffdf8;font-family:var(--display);font-weight:700}
+  tr:last-child td{border-bottom:0}
+  .tag{display:inline-block;padding:2px 10px;border-radius:999px;
+       font-family:var(--display);font-weight:700;font-size:0.78rem;
+       border:2px solid var(--ink);background:#fff;color:var(--ink)}
+  .tag-ok{background:var(--ok);color:#fff} .tag-warn{background:var(--warn);color:#fff}
+  .tag-bad{background:var(--bad);color:#fff} .tag-accent{background:var(--accent);color:#fff}
+  .system-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;
+                border-radius:999px;border:2px solid var(--ink);background:var(--card);
+                font-family:var(--display);font-weight:700;font-size:0.86rem}
+  .system-badge .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .meta{color:var(--ink-soft);font-size:0.88rem}
+  @media print{ body{background:#fff} .card{box-shadow:none} }
+</style>
+<style>
+  .wrap{padding-top:28px}
+  .eyebrow{display:flex;align-items:center;gap:12px;margin:0 0 12px;font-weight:700}
+  .eyebrow span:last-child{font-size:0.9rem}
+  h1{font-size:clamp(1.8rem,3.15vw,2.6rem);line-height:1.35;max-width:950px}
+  .lede{max-width:880px;margin:0 0 14px}
+  .quick-wins{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:8px;margin:0 0 22px}
+  .quick-wins li{padding:5px 12px;border:1px solid var(--ink);border-radius:8px;background:#ffe7d7;font-size:0.9rem;font-weight:700}
+  .comparison{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:stretch;margin:0}
+  .compare-card{min-width:0;padding:20px;background:var(--card);border:2px solid var(--ink);border-radius:18px;box-shadow:4px 5px 0 var(--line)}
+  .compare-card.after{border-top:7px solid var(--accent);padding-top:15px}
+  .compare-card h2{font-size:1.28rem;margin:0 0 4px;padding:0;border:0}
+  .compare-card .intro{margin:0 0 10px;font-size:0.9rem}
+  .compare-label{font-weight:800;letter-spacing:0.04em;font-size:0.76rem;display:block;margin-bottom:3px}
+  .node{border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;min-width:0}
+  .node strong{display:block;font-size:0.92rem}
+  .node p{font-size:0.87rem;margin:3px 0 0;line-height:1.55}
+  .node code{font-size:0.83rem}
+  .vault-node{background:#eee8dd;border:1px dashed var(--ink-soft);margin-bottom:8px}
+  .disk-title{font-size:0.78rem;font-weight:700;margin:10px 0 5px;letter-spacing:0.03em}
+  .code-lines{display:block;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;line-height:1.65;margin:5px 0 0}
+  code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}
+  .route{margin:8px 0;text-align:center;font-size:0.82rem;font-weight:700;line-height:1.45}
+  .destination-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+  .ai-node{background:#f7f3ea}
+  .app-node{background:#fff0e5;border-color:#e9a580}
+  .caption{margin:12px 0 0;color:#62584c;font-size:0.84rem}
+  .takeaway{margin:20px 0 0;padding:12px 16px;border-left:5px solid var(--accent);background:#fff0e5}
+  .benefits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+  .benefits .card{margin:0;padding:20px;min-width:0}
+  .benefits h3{margin:0 0 8px;font-size:1.08rem}
+  .benefits p{margin:0;font-size:0.94rem}
+  .scene{font-size:0.8rem;font-weight:700;display:block;color:#825035;margin-bottom:8px}
+  .number{font-family:var(--display);font-weight:800;font-size:1.45rem;color:#a23d0e;display:block;margin-bottom:10px}
+  .flow{list-style:none;padding:0;counter-reset:steps;display:grid;gap:12px}
+  .flow li{display:grid;grid-template-columns:38px minmax(0,1fr);gap:12px;border-top:1px solid var(--line);padding:16px 0 0;counter-increment:steps}
+  .flow li:before{content:counter(steps);display:grid;place-items:center;width:32px;height:32px;border:2px solid var(--ink);border-radius:50%;background:#ffe1c9;font-weight:800}
+  .flow h3{margin:0 0 5px;font-size:1rem}
+  .flow p{margin:0 0 8px;font-size:0.92rem}
+  pre{max-width:100%;margin:8px 0;padding:12px 14px;background:#fffdf8;border:1px solid var(--line);border-radius:9px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;font-size:0.88rem}
+  pre code{font-size:inherit}
+  .note{font-size:0.9rem;color:#62584c}
+  .boundary{display:grid;gap:16px;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .boundary section{min-width:0;border-top:4px solid #c0ad90;padding-top:10px}
+  .boundary h3{margin:0 0 7px;font-size:1.05rem}
+  .boundary p{font-size:0.94rem;margin:0}
+  .boundary-note{background:#eee8dd;padding:14px 16px;border-radius:10px;margin-top:18px;font-size:0.9rem}
+  details{margin-top:42px;border:1px solid #b5a892;border-radius:12px;padding:16px 20px;background:var(--card)}
+  summary{font-weight:700;cursor:pointer}
+  details p,details li{font-size:0.88rem}
+  details h3{font-size:1rem;margin-top:20px}
+  details ul{padding-left:22px}
+  details a{color:#964018;overflow-wrap:anywhere}
+  .source-sha{font-size:0.8rem;word-break:break-all}
+  footer{margin-top:24px;font-size:0.82rem;color:#62584c}
+  @media(max-width:720px){
+    .wrap{max-width:92vw;padding-top:22px}
+    .comparison,.benefits,.boundary{grid-template-columns:minmax(0,1fr)}
+    .comparison{gap:18px}
+    .compare-card{padding:18px}
+    .compare-card.after{padding-top:13px}
+    h2{margin-top:34px}
+    .benefits{gap:14px}
+    .benefits .card{padding:18px}
+    .number{display:inline-block;margin:0 10px 8px 0}
+    .scene{display:inline}
+    .flow li{grid-template-columns:32px minmax(0,1fr);gap:8px}
+    .boundary{gap:22px}
+  }
+  @media(max-width:380px){.destination-grid{grid-template-columns:minmax(0,1fr)}}
+  @media print{.comparison{break-inside:avoid}.compare-card{box-shadow:none}details{display:block}summary{list-style:none}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <p class="eyebrow"><span class="system-badge"><span class="dot" aria-hidden="true"></span>kinko</span><span>いつもの開発で、どう変わる？</span></p>
+    <h1>設定の構造はAIに。<br>秘密の値は、起動するアプリへ。</h1>
+    <p class="lede">実値入りの<code>.env</code>を、<strong>暗号化した金庫と、参照名だけの<code>.env.tmpl</code></strong>へ置き換える。設定ファイルを一緒に読んでも、秘密の値まで会話へ貼り付けずに、AIと設定を相談しやすくなります。</p>
+    <ul class="quick-wins" aria-label="嬉しい変化">
+      <li>設定の構造を見せやすい</li><li>同じ秘密の更新を一箇所に</li><li>バックアップも暗号化</li>
+    </ul>
+  </header>
+
+  <figure class="comparison" aria-label="架空の同じ開発アプリで、kinko利用前と利用後を比較">
+    <section class="compare-card before" aria-labelledby="before-title">
+      <span class="compare-label">BEFORE · 利用前</span>
+      <h2 id="before-title">設定と秘密が、同じファイルに</h2>
+      <p class="intro">架空の開発アプリ：APIとデータベースを使う。</p>
+      <p class="disk-title">ディスクに置くもの</p>
+      <div class="node">
+        <strong>.env ／ 秘密の実値が入る</strong>
+        <code class="code-lines">API_TOKEN=〈秘密の値〉
+DB_PASSWORD=〈秘密の値〉
+APP_MODE=development</code>
+      </div>
+      <p class="route" aria-hidden="true">↓ ファイル全体を読むと</p>
+      <div class="destination-grid">
+        <div class="node ai-node"><strong>設定を読むAI</strong><p>APIキーもDBパスワードも、まとめて会話へ入り得る。</p></div>
+        <div class="node app-node"><strong>起動するアプリ</strong><p><code>.env</code>から実値を読み込んで動く。</p></div>
+      </div>
+      <p class="caption">一部分の相談でも、ファイル全体を渡すと他の秘密まで見えてしまう。</p>
+    </section>
+    <section class="compare-card after" aria-labelledby="after-title">
+      <span class="compare-label">AFTER · 利用後</span>
+      <h2 id="after-title">参照はファイル、実値は金庫へ</h2>
+      <p class="intro">同じ開発アプリ。秘密の置き場所を分ける。</p>
+      <p class="disk-title">ディスクに置くもの</p>
+      <div class="node vault-node"><strong>暗号化金庫 ／ vault.age</strong><p>APIキー・DBパスワードの<strong style="display:inline;font-size:inherit">名前も実値も暗号化</strong>して保管。</p></div>
+      <div class="node">
+        <strong>.env.tmpl ／ 秘密は参照名で指定</strong>
+        <code class="code-lines">API_TOKEN=${kinko:example-service/api-token}
+DB_PASSWORD=${kinko:example-service/db-password}
+APP_MODE=development</code>
+      </div>
+      <p class="route">↓ AIはテンプレートを読む ／ アプリはrunで起動</p>
+      <div class="destination-grid">
+        <div class="node ai-node"><strong>設定を読むAI</strong><p>項目と参照名が見える。テンプレートに秘密の実値はない。</p></div>
+        <div class="node app-node"><strong>起動するアプリ</strong><p><code>kinko run</code>が参照を展開し、環境変数で実値を渡す。</p></div>
+      </div>
+    </section>
+  </figure>
+  <p class="caption">すべて架空の例です。〈秘密の値〉は説明用の表記で、実際のキーやパスワードではありません。</p>
+  <p class="takeaway"><strong>変わるのは、ファイルを読んだときに見えるもの。</strong> <code>run</code>は実値入りの<code>.env</code>を作りません。ただし、AIやアプリが秘密を絶対に読めなくなる仕組みではありません。</p>
+
+  <section aria-labelledby="benefits-title">
+    <h2 id="benefits-title">日々の「ちょっと怖い」「面倒」が減る</h2>
+    <div class="benefits">
+      <article class="card"><span class="number">01</span><span class="scene">AIに設定を直してもらうとき</span><h3>構造を見せるために、<br>値まで渡さなくていい。</h3><p>「どの項目があり、何を参照するか」は<code>.env.tmpl</code>で相談できます。実値を伏せ直す手間や、消し忘れて会話に貼る機会を減らせます。</p></article>
+      <article class="card"><span class="number">02</span><span class="scene">複数のプロジェクトで同じ秘密を使うとき</span><h3>値の変更は、<br>共通の金庫で一度。</h3><p><strong>同じ金庫の同じ参照名</strong>を使えば、各プロジェクトの実値を貼り替えずに済みます。金庫の値を更新すると、<strong>次の<code>run</code>起動</strong>から反映。起動済みアプリは再起動が必要です。</p></article>
+      <article class="card"><span class="number">03</span><span class="scene">予備を別の場所へ残すとき</span><h3>バックアップの中身も、<br>暗号化したまま。</h3><p><code>export</code>で全件を別の暗号化金庫へ書き出せます。別パスワードも設定可能。既存の出力先は上書きしません。安全な場所への保管は自分で行い、自動同期はしません。</p></article>
+    </div>
+    <p class="note">標準では、同じユーザーの各プロジェクトから共通の金庫を使います。別の金庫を指定したプロジェクトには、その更新は届きません。参照名自体にも、外に見せたくない情報を入れないようにします。</p>
+  </section>
+
+  <section aria-labelledby="daily-title">
+    <h2 id="daily-title">最初に準備。普段は、アプリをrunで起動。</h2>
+    <p>下のコマンドは使い方の説明です。このページからは実行しません。<code>your-command</code>は、自分が信頼するアプリの起動コマンドを表します。</p>
+    <ol class="flow">
+      <li><div><h3>金庫を一度作る</h3><p>マスターパスワードを決めて確認入力します。端末では入力文字は表示されません。</p><pre><code>kinko init</code></pre></div></li>
+      <li><div><h3>秘密を、名前を付けて入れる</h3><p>コマンドには値を書かず、続く端末の非表示入力で入れます。同じ名前で<code>add</code>すると値を更新できます。</p><pre><code>kinko add example-service/api-token
+kinko add example-service/db-password</code></pre><p class="note">値を引数に書くと、シェル履歴やプロセス一覧に残る場合があります。</p></div></li>
+      <li><div><h3>名前を確認し、参照テンプレートを用意する</h3><p><code>list</code>は名前だけを表示します。図の<code>.env.tmpl</code>を用意し、秘密の部分を下の形で参照します。</p><pre><code>kinko list</code></pre><pre><code>API_TOKEN=${kinko:example-service/api-token}</code></pre><p class="note">切替後も元の実値入り<code>.env</code>が残れば、そのファイルを読むリスクは残ります。kinkoは既存ファイルを自動で移行・削除しません。</p></div></li>
+      <li><div><h3>普段は、実値を表示せずアプリへ渡す</h3><p>金庫を開き、参照を実値に置き換えてアプリを起動します。参照先が未登録なら、アプリは起動せずエラーになります。</p><pre><code>kinko run --env-file .env.tmpl -- your-command</code></pre></div></li>
+      <li><div><h3>必要なときに、暗号化バックアップを作る</h3><p>新しい出力先を指定します。マスターパスワードを忘れると復旧できないため、バックアップは本体とは別の安全な場所に保管します。</p><pre><code>kinko export backup.age</code></pre></div></li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="boundary-title">
+    <h2 id="boundary-title">安心して使うために、ここは覚えておく</h2>
+    <div class="boundary">
+      <section><h3>getは、値を表示する操作。</h3><p><code>kinko get example-service/api-token</code>は、秘密の値を標準出力へ出します。画面やログ、AIの会話へ流せばそこに残ります。<strong>AIが金庫を解除してgetを実行できるなら、AIも値を読めます。</strong></p></section>
+      <section><h3>渡されたアプリは、値を読める。</h3><p>アプリは値を使うため、渡された秘密を読めます。そのアプリや子孫のプログラムが<strong>出力・保存・外部送信すれば漏れます。</strong>起動するコマンドを信頼できることが前提です。</p></section>
+      <section><h3>親から引き継ぐ環境もある。</h3><p><code>run</code>は、起動元の環境変数も引き継ぎます。<code>KINKO_PASSWORD</code>は大文字小文字を問わず除外しますが、<strong>他の既存の秘密をすべて自動で取り除くわけではありません。</strong></p></section>
+    </div>
+    <p class="boundary-note">金庫のうちテンプレートで参照していない値を、<code>run</code>がまとめて追加することはありません。一方、起動元の環境にすでにある秘密は別です。kinkoは、AIやアプリを完全に隔離する装置でも、侵害された端末を守る装置でもありません。</p>
+  </section>
+
+  <details>
+    <summary>現在の提供状況・技術的な根拠（2026年10月12日時点）</summary>
+    <p><strong>現在はローカルCLIの候補（prerelease）です。</strong>このページは使い方の説明資料で、製品GUIではありません。GUI、クラウド同期、チーム共有、自動更新を提供済みとして描いていません。</p>
+    <p>Windows Hello / macOS Keychain / Linux Secret Serviceに接続するadapterと自動検査はありますが、<strong>端末認証の実機受入は未確認、正式なバージョン付き配布は未完了</strong>です。自動検査の存在や成功は、実機認証の保証にはなりません。</p>
+    <h3>説明に使った固定source</h3>
+    <p>挙動の確認対象：<code class="source-sha">503c7d9f10536a06ed1581e93f597fe8913bd94b</code>。以下の公開資料とソースを照合しています。コマンド例は本資料の作成・確認では実行していません。</p>
+    <ul>
+      <li><a href="https://github.com/ishizakahiroshi/kinko/blob/503c7d9f10536a06ed1581e93f597fe8913bd94b/README.md">README：目的、使い方、安全性の境界、prereleaseの注記</a></li>
+      <li><a href="https://github.com/ishizakahiroshi/kinko/blob/503c7d9f10536a06ed1581e93f597fe8913bd94b/docs/reference_cli.md">CLI reference：入力方法、runの環境継承、exportの契約</a></li>
+      <li><a href="https://github.com/ishizakahiroshi/kinko/blob/503c7d9f10536a06ed1581e93f597fe8913bd94b/docs/reference_architecture.md">Architecture reference：暗号化金庫、データの流れ、保護しないもの</a></li>
+      <li><a href="https://github.com/ishizakahiroshi/kinko/blob/503c7d9f10536a06ed1581e93f597fe8913bd94b/internal/cli/run.go">run実装：参照の展開、親環境の継承、KINKO_PASSWORDの除外</a></li>
+      <li><a href="https://github.com/ishizakahiroshi/kinko/blob/503c7d9f10536a06ed1581e93f597fe8913bd94b/internal/cli/unlock.go">CLI実装：add / list / get</a>、<a href="https://github.com/ishizakahiroshi/kinko/blob/503c7d9f10536a06ed1581e93f597fe8913bd94b/internal/cli/config.go">保存先と非表示入力</a></li>
+      <li><a href="https://github.com/ishizakahiroshi/kinko/blob/503c7d9f10536a06ed1581e93f597fe8913bd94b/internal/unlock/service.go">解除処理：操作ごとに金庫を開く</a>、<a href="https://github.com/ishizakahiroshi/kinko/blob/503c7d9f10536a06ed1581e93f597fe8913bd94b/internal/vault/vault.go">金庫実装：名前と値の暗号化</a></li>
+      <li><a href="https://github.com/ishizakahiroshi/kinko/blob/503c7d9f10536a06ed1581e93f597fe8913bd94b/docs/bot/practical-cli-construction/PROGRESS.md">候補構築の検収記録：自動検査と実機未確認の区別</a></li>
+    </ul>
+    <p>金庫の標準保存先はOSのユーザー設定ディレクトリです。<code>KINKO_VAULT</code>で別の金庫を指定できます。保存先のファイルシステムにも制約があり、新規作成・exportはhard link非対応のFAT / exFATでは使えません。未検証の環境を対応済みとは扱いません。</p>
+  </details>
+  <footer>kinko 利用前後の変化と嬉しい点 · 説明資料 · 2026-10-12</footer>
+</main>
+</body>
+</html>
