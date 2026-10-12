@@ -18,7 +18,7 @@ last_reviewed: 2026-10-12
 - branch: `dots/use-benefits-html-P-20261012-002`。
 - 挙動の固定SHA: `503c7d9f10536a06ed1581e93f597fe8913bd94b`。この候補のREADME、reference、CLI sourceを読む。mainだけで現行候補の挙動を判断しない。
 - HTMLだけの案件。PR作成、既存構築PR #2への追加、main mergeは不要。
-- 管理Issueは手元担当が作成してPROGRESSに追記する。送信・受付・提出・検収はそのIssueへ記録。
+- 管理Issue: https://github.com/ishizakahiroshi/kinko/issues/3 。送信・受付・提出・検収はこのIssueへ記録。
 - 成果: 同階層 `design_kinko-use-benefits_2026-10-12.html`。正式なコード変更・製品GUIではなく説明資料。
 
 ## 内容と完成する体験

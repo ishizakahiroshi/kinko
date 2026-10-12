@@ -9,11 +9,11 @@ last_reviewed: 2026-10-12
 
 # #P-20261012-002 kinko: 説明HTMLの進捗
 
-作業branch: `dots/use-benefits-html-P-20261012-002`。固定挙動sourceは503c7d9。状態の正本は本件管理Issue。
+作業branch: `dots/use-benefits-html-P-20261012-002`。固定挙動sourceは503c7d9。状態の正本は https://github.com/ishizakahiroshi/kinko/issues/3 。
 
 | 工程 | 担当 | 状態 |
 |---|---|---|
-| 指示・管理Issue・送信 | 手元Codex | 準備中 |
+| 指示・管理Issue・送信 | 手元Codex | 指示とIssue公開済み、未送信 |
 | HTML作成 | dots | 未受付 |
 | 独立内容レビュー | dots別担当 | 未実施 |
 | 回収・全内容照合・表示確認 | 手元Codex | 未実施 |
