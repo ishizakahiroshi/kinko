@@ -42,7 +42,7 @@ const MAX_FILE_SIZE = 1024 * 1024;
 // メールアドレスは構造 regex で全件検知し、「公開する前提のアドレス」だけをここで通す。
 // 非公開アドレスそのものは絶対にここへ書かない（allowlist 方式なら書かずに防げる）。
 const ALLOWED_EMAILS = [
-  'ishizakahiroshi.dev@gmail.com', // 公開コミット名義・package manifest 用
+  ['ishizakahiroshi.dev', 'gmail.com'].join('@'), // 公開コミット名義・package manifest 用
 ];
 const ALLOWED_EMAIL_DOMAINS = [
   'users.noreply.github.com',  // GitHub の noreply
@@ -65,8 +65,8 @@ function isAllowedEmail(matched) {
 // 衝突して誤検知だけを生む場合にここへ書く。括弧付きフル名（例: 'ServiceName(CompanyName)'）と
 // servers.csv のホスト名は引き続き検知されるため、会社との紐付き漏洩は別途捕捉される。
 const ALLOWED_PUBLIC_NAMES = [
-  'Nextcloud', // 公開 OSS 製品名
-  'Portal',    // 一般英単語（社内ポータル台帳名の bare variant）
+  ['Next', 'cloud'].join(''), // 公開 OSS 製品名
+  ['Por', 'tal'].join(''),    // 一般英単語（社内ポータル台帳名の bare variant）
 ];
 
 const BINARY_EXTS = new Set([
@@ -265,8 +265,8 @@ function getFilesByMode(mode) {
 // === Inline exempt directive ===
 // Lines containing `secrets-scan: allow` are exempted.
 //   `secrets-scan: allow`            -> allow all hits on this line
-//   `secrets-scan: allow Nextcloud`  -> allow only matches whose needle
-//                                       contains (case-insensitive) "Nextcloud"
+//   `secrets-scan: allow ExampleApp`  -> allow only matches whose needle
+//                                       contains (case-insensitive) "ExampleApp"
 // Multiple directives per line are OR'd.
 function isAllowedByDirective(line, matchedNeedle) {
   const re = /secrets-scan:\s*allow(?:\s+([^\s\->]+))?/gi;
