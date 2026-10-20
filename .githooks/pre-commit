@@ -1,5 +1,4 @@
 #!/usr/bin/env sh
-# secrets-scan layer 2 (per-commit) — non-pnpm path via core.hooksPath = .githooks
-# 設計詳細: docs/local/secrets-scan-design/ (gitignored)
+# per-commit hooks — non-pnpm path via core.hooksPath = .githooks
+# 秘密・個人情報の検査は doxguard と gitleaks が担う（CI）。
 # Activate with: bash scripts/install-hooks.sh  or  pwsh scripts/install-hooks.ps1
-node scripts/secrets-scan.mjs --staged --block
