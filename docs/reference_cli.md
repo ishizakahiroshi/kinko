@@ -1,0 +1,359 @@
+---
+type: reference
+status: stable
+tags: [cli, reference]
+last_reviewed: 2026-10-11
+---
+
+# kinko CLI reference
+
+この文書は現在の CLI 契約を、コマンド、入出力、環境変数、env テンプレートの順に
+まとめる。背景と安全性の境界は [Architecture reference](reference_architecture.md) を参照。
+
+## 引数の事前検証
+
+`init` は引数なし、`get` / `rm` / `export` はちょうど1個、`list` は0〜1個を要求する。
+誤った個数、空白だけの名前、先頭の不明 option は password/value 入力と vault 変更の前に拒否する。
+名前や出力先が `-` で始まる場合は `get -- -example` のように `--` を先に置く。
+`add` の2個目以降は従来どおり値であり、`--word` も値の一部として space で結合する。
+`help` / `version` の余分な引数も拒否する。
+
+## コマンド一覧
+
+### `kinko init`
+
+新しい空の保管庫を作る。
+
+```text
+kinko init
+```
+
+- 8 文字（文字数、byte数ではない。マルチバイト文字も1文字として数える）以上の
+  パスワードと確認入力を求める
+- 保管庫が既に存在する場合は上書きせず失敗する
+- 成功時は保管庫のパスと、復旧手段がない旨を標準出力へ出す
+
+`KINKO_PASSWORD` が設定されている非対話処理では、その値をパスワードと確認入力の
+両方に使う。
+
+### `kinko add <名前> [値]`
+
+秘密を追加する。同じ名前があれば更新する。別名は `set`。
+
+```text
+kinko add example-service/api-token
+kinko add example-service/api-token <値>
+```
+
+- 値を省略すると、端末では画面に表示しない入力を使う
+- 非 TTY の標準入力では 1 行を値として読み、その後に password を1行読む
+  （`KINKO_PASSWORD` があれば password 行は不要）
+- 先読みで次の行を消費しない。値入力の EOF / read error は保存前に失敗する
+- 空値を入力する場合も空の1行を渡す。入力自体の省略とは区別する
+- 値を引数で渡した場合は、process list と shell history に残る警告を標準エラーへ出す
+- 名前の前後の空白は除去し、空の名前は拒否する
+- 空文字の値は保存できる
+- 成功メッセージは標準エラーへ出す
+
+引数で渡した複数語は、半角 space で結合して 1 つの値にする。この形式は shell の quoting
+によって元の空白表現が変わるため、対話入力を推奨する。
+
+### `kinko get <名前>`
+
+秘密を 1 件だけ標準出力へ出す。
+
+```text
+kinko get example-service/api-token
+```
+
+- 出力末尾に改行を付けない
+- 値以外を標準出力へ混ぜない
+- stdout の error / short write は失敗とし、値や writer の error 本文を診断へ混ぜない
+  （OS の broken-pipe 終了も非0。途中まで出力済みの bytes は取り消せない）
+- 名前の前後の空白は除去してから探す
+- 名前が無い場合は失敗する
+- パスワード prompt は TTY の標準エラーへ出す
+
+標準出力は秘密そのものである。画面、ログ、command substitution、redirect の扱いは
+呼び出し側の責任になる。
+
+### `kinko list [接頭辞]`
+
+秘密の名前を辞書順で一覧する。別名は `ls`。
+
+```text
+kinko list
+kinko list example-service/
+```
+
+- 一致した名前を 1 行 1 件で標準出力へ出す
+- 値は出さない
+- 接頭辞を指定した場合は `strings.HasPrefix` の case-sensitive 一致で絞る
+- 件数を標準エラーへ出す
+
+### `kinko rm <名前>`
+
+秘密を削除する。別名は `remove`, `delete`。
+
+```text
+kinko rm example-service/api-token
+```
+
+- 名前の前後の空白は除去してから探す
+- 名前が無い場合は失敗し、保管庫を書き換えない
+- 成功メッセージは標準エラーへ出す
+
+### `kinko run --env-file <テンプレート> -- <コマンド> [引数...]`
+
+テンプレートの kinko 参照を実値へ展開し、その環境を持つ子プロセスを起動する。
+
+```text
+kinko run --env-file .env.tmpl -- your-command --flag
+kinko run --env-file=.env.tmpl -- your-command --flag
+```
+
+- `--env-file <path>` と `--env-file=<path>` を受け付ける
+- command の option と区別するため `--` separator の使用を推奨する
+- `--env-file` の重複、空の path、不明な run option、空の command は vault 入力前に拒否する
+- separator を省略する場合、最初の option ではない引数を command として扱う
+- 標準入力、標準出力、標準エラーを子プロセスへ接続する
+- 子が非 0 で終了した場合、その exit code で `kinko` も終了する
+- command を起動できない場合は通常の `kinko` error として終了する
+- 有効な行（空行・comment を除く）に kinko 参照が 1 件もなければ、保管庫を開かず
+  password も求めない。comment 行だけにある参照は数えない
+- 参照が 1 件でも見つからない場合、子プロセスを起動せず失敗する
+- 同じ key を大文字小文字を区別せず 2 回設定すると、子へ渡る前に error にする
+  （どちらが優先されるかが OS ごとに異なるため）
+- 読み込んだテンプレートの先頭に UTF-8 BOM が付いていても、1 行目の key 名から
+  自動的に取り除く
+
+子環境は親環境を基にし、テンプレートで展開した項目を追加する。ただし
+`KINKO_PASSWORD` は、大小文字の違いを含めて親環境から除外する。
+
+### `kinko export <出力先>`
+
+現在の全 secret を、新しい暗号化保管庫へ書き出す。
+
+```text
+kinko export backups/kinko-vault.age
+```
+
+- 出力先が存在する場合は上書きせず失敗する
+- source vaultを通常の解除優先順位で開く（TTYではproviderを一度試す）
+- 出力先のパスワードを求め、空なら元と同じパスワードを使う
+- 別パスワードを指定する場合は 8 文字（文字数、byte数ではない）以上を要求する
+- 完成・sync・close した暗号文だけを no-overwrite で公開し、途中の空 vault は作らない
+- 公開失敗時は自分の暗号化 temp だけを掃除する。他の writer の出力先を削除しない
+- `vault_id` と未知の任意 metadata を引き継ぐ。旧 format 1 source に ID がない場合は
+  source の保存を先に行う。出力先が後で失敗しても、この ID 付与は残る
+- 成功時は件数と出力先を標準エラーへ出す
+
+`KINKO_PASSWORD` を設定した場合、sourceと出力先のすべての password prompt が同じ環境変数値を返す。
+その環境変数を使う非対話 `export` では元と同じ値になる。環境変数を設定せず stdin から
+「source password、destination password」の順に2行渡す場合は別 password を指定できる。
+2行目が空なら source と同じものを使う。
+
+export 先は通常の vault と同じ形式である。`KINKO_VAULT` へそのパスを指定すれば開ける。
+専用の import command は現在ない。
+
+### `kinko unlock setup [--dry-run] [--yes] [--replace]`
+
+master passwordでsource vaultを開き、この端末のOS providerへcredentialを登録する。
+
+- `--dry-run`はvaultを検証してprovider、security level、verification binding、availability、
+  configured、availableだけを表示し、vaultもOS credentialも変更しない
+- 実保存はTTYでだけ実行でき、`--yes`を指定しない場合は確認を求める
+- 既存credentialを更新するには`--replace`を指定する。旧credentialを先に削除する方式へは
+  黙って切り替えない
+- legacy format 1 vaultの実setupでは、provider credentialとの照合用`vault_id`を暗号化JSONへ
+  追加保存する。provider保存失敗後もmaster passwordで開ける
+- Windowsは`RtlGetVersion`で実ビルド番号を確認し、build 22000未満では`unsupported`として
+  Hello interopとCredential Managerを呼ばない。対応buildでは`CheckAvailabilityAsync`でHello/PINの
+  利用可否を確認してCredential Managerへ保存する。実際のunlockでHello本人確認を行う。`DeviceNotPresent`、
+  `NotConfiguredForUser`、`DisabledByPolicy`、`DeviceBusy`、active application HWND不在では保存しない。
+  macOSはKeychain user presence、Linuxは
+  desktop Secret Serviceを使う。未対応OS、headless、provider UI表示前の利用不能は保存せず失敗する
+
+### `kinko unlock status`
+
+現在のprovider状態を標準出力へ表示する。vault path、account内部ID、credential値、master passwordは
+表示しない。
+
+```text
+provider: <provider name>
+security-level: <user-verified|session-protected|password-only>
+verification-binding: <credential-bound|application-gated|session-protected|none>
+availability: <available|device-not-present|not-configured|disabled-by-policy|device-busy|...>
+configured: <true|false>
+available: <true|false>
+```
+
+statusはvaultを開かず、vault fileやbackupを変更しない。
+
+### `kinko unlock disable [--dry-run] [--yes]`
+
+この端末のprovider credentialだけを削除する。
+
+- `--dry-run`はstatusを表示するだけで削除しない
+- 実削除はTTYの確認、または明示的な`--yes`が必要
+- vault、backup、format、master passwordは変更しない
+- credentialが未設定またはproviderが未対応なら安全なerrorを返し、passwordを表示しない
+
+### `kinko --master-password <command> ...`
+
+`add`、`get`、`list`、`rm`、`run`、`export`でOS providerを使わず、既存のpassword readerを
+選ぶboolean option。password値をargumentへ置かない。空でない`KINKO_PASSWORD`は既存のautomation
+契約としてreaderから優先される。
+
+通常のTTY解除はproviderを1 invocationにつき最大1回試す。provider呼び出しには既定10秒のdeadlineを
+適用する。未設定・未対応・UI表示前の利用不能だけはmaster passwordへfallbackし、OS認証request開始後
+のcancel、retry exhaustion、timeout、DeviceBusy、async failure、credentialとvaultの不一致は同じ
+invocationで追加promptせず停止する。OS側APIがcontext cancellationを受け取らない場合もCLIはdeadline
+で戻るが、OS dialog自体が残る可能性があるため、明示的に閉じてから再実行する。
+
+### Version と help
+
+```text
+kinko version
+kinko --version
+kinko -v
+
+kinko help
+kinko --help
+kinko -h
+```
+
+source tree の既定 version は `dev`。release build では linker flag
+`-X main.version=<version>` で埋め込む設計だが、release workflow はまだ提供していない。
+
+## 環境変数
+
+### `KINKO_VAULT`
+
+保管庫ファイルのパスを上書きする。未設定時は、`os.UserConfigDir()` が返す
+ユーザー設定ディレクトリ配下の `kinko/vault.age` を使う。
+
+Windows の一般的な環境では `%AppData%\kinko\vault.age` になる。実際の値は OS と
+ユーザー設定に依存する。
+
+`KINKO_VAULT` は子プロセスから自動除外しない。パス自体を子へ見せたくない場合は、
+起動前に環境を分ける必要がある。
+
+### `KINKO_PASSWORD`
+
+password prompt を非対話化する。
+
+入力の優先順位は次のとおり。
+
+1. 空でない `KINKO_PASSWORD`
+2. TTY なら画面に表示しない端末入力
+3. 非 TTY なら標準入力の 1 行
+
+複数行を1本の pipe で順に渡せる。`init` は password と確認の2行、値省略 `add` は値と
+password の2行、`export` は source password と destination password の2行。
+`KINKO_PASSWORD` が空でなければ password 行は不要で、値の行だけを消費する。
+`run` が password を stdin から読む場合も残りの bytes は子へ渡し、先読みで捨てない。
+
+環境変数は子プロセス、診断情報、同じユーザーの別プロセスから読める場合がある。
+CI や限定した自動処理以外では使用しない。
+
+`kinko run` はこの変数を子環境から case-insensitive に除外する。env テンプレートで
+同名を設定することも拒否する。
+
+## env テンプレート
+
+### 基本形
+
+```dotenv
+# 空行と、この形の comment は無視される
+API_TOKEN=${kinko:example-service/api-token}
+APP_MODE=development
+COMBINED=prefix-${kinko:example-service/id}-suffix
+```
+
+各有効行は、最初の `=` で `KEY` と `VALUE` に分割する。
+
+- 行全体の前後の空白を除去する
+- 空行を無視する
+- 空白除去後に `#` で始まる行を comment として無視する
+- key の前後の空白を除去する
+- 空の key を拒否する
+- value 内の `${kinko:<名前>}` をすべて置換する
+- 1 行に複数の参照を書ける
+- secret の空文字と、存在しない secret は区別する
+- 存在しない参照が 1 つでもあれば、空値で起動せず全体を失敗させる
+
+### dotenv や shell との違い
+
+テンプレートは完全な dotenv parser や shell parser ではない。
+
+- `export KEY=value` 構文は扱わない
+- quote を構文として解釈せず、`"` や `'` も value の文字として渡す
+- inline comment を解釈しない
+- variable expansion、command substitution、escape sequence を解釈しない
+- multiline value を扱わない
+- `${kinko:...}` を literal として escape する構文はない
+
+テンプレートには 1 行 1 環境変数の単純な `KEY=VALUE` だけを書く。
+
+### 予約名
+
+`KINKO_PASSWORD` は大文字小文字を問わず予約されている。
+
+```dotenv
+# いずれも error
+KINKO_PASSWORD=value
+kinko_password=value
+```
+
+保管庫のマスターパスワードは、個別 secret を渡すテンプレートより強い資格情報である。
+テンプレートからの再注入を許可しない。
+
+## Exit code
+
+| 状況 | Exit code |
+|---|---|
+| kinko command 成功 | `0` |
+| 引数、保管庫、password、template などの error | `1` |
+| `kinko run` の子プロセスが非 0 で終了 | 子プロセスと同じ code |
+| `kinko run` の子プロセスがシグナルで終了（Unix） | `128 + シグナル番号`（shの慣例と同じ） |
+
+誤パスワードまたは破損した保管庫では、age が両者を区別できないため同じ error として
+扱う。CLI は password の確認を促すが、破損の可能性も残る。
+
+## Aliases
+
+| 正式名 | Alias |
+|---|---|
+| `add` | `set` |
+| `list` | `ls` |
+| `rm` | `remove`, `delete` |
+| `version` | `--version`, `-v` |
+| `help` | `--help`, `-h` |
+
+新しい automation は正式名を使うことを推奨する。
+
+## 保存競合と lock の扱い
+
+- 開いた時点の暗号文 fingerprint と、保存直前の暗号文を writer lock 内で比較する。
+  変わっていた場合は `ErrConflict` で拒否し、古い snapshot を上書きしない。
+- lock 使用中は待たずに `ErrLocked` で失敗する。自動リトライや自動マージは行わない。
+  最新の vault を開き直してコマンドを再実行する。
+- 対象パスと親 directory の symlink は正規化して同じ lock を使う。dangling symlink は拒否する。
+  OS provider の既存 credential route は変更していないため、端末解除では登録時のパスを使う。
+- 異常終了で残る `<正規化対象>.lock` は自動で奪わない。全 writer の終了と対象を確認してから
+  空の lock directory だけを手動削除する。通常のエラーでは自動解放する。
+- 同じ `Vault` 値の goroutine 同時利用、hard-link 別名、network/sync filesystem、第三者が
+  directory/lock を差し替える状況は対象外。新規作成 / export は hard link 非対応 FS では安全に失敗する。
+- 旧 writer と混在させない。lock を守らない process の直接上書きは防げない。
+
+[合成データの一連操作](../examples/README.md) は、名前だけの template と値を表示しない子 command を含む。
+
+FAT / exFAT など hard link 非対応 FS での新規作成・export は非対応であり、安全に失敗する。
+未検証の FS を対応済みとは扱わない。
+
+Windows の Hello 本人確認後に credential 読出しが失敗した場合は、未登録・削除済み・一時的な
+store failure を含め `credential-read-failed` で停止する。その invocation では password へ戻らない。
+明示的に `--master-password` を指定した別 invocation で再実行できる。未登録確認のために本人確認前へ
+credential read を移していない。Linux Secret Service の prompt不要 sentinel `/` は成功として扱い、
+実際の prompt object は起動せず停止する。これらの合成 test は native acceptance の証明ではない。
