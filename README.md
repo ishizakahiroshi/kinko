@@ -38,6 +38,29 @@ AI CLI や検索コマンドが設定ファイル全体を読んだときに、�
 
 ## インストール
 
+### GitHub Releases から
+
+[Releases](https://github.com/ishizakahiroshi/kinko/releases) から、OS と CPU に合うファイルを
+取ります（Windows は `.zip`、macOS と Linux は `.tar.gz`）。同じ場所の `SHA256SUMS` で
+ファイルが壊れていないことを確かめてから展開し、中の `kinko`（Windows は `kinko.exe`）を
+PATH の通った場所へ置きます。`kinko --version` で版を確認できます。
+
+```powershell
+# Windows の例（PowerShell）。<版> は取ったファイル名の版に置き換える
+(Get-FileHash .\kinko_<版>_windows_amd64.zip -Algorithm SHA256).Hash.ToLower()
+# 表示された値が SHA256SUMS の同じファイル名の行と一致することを確認する
+```
+
+```sh
+# macOS / Linux の例。表示された値を SHA256SUMS の同じファイル名の行と比べる
+shasum -a 256 kinko_<版>_linux_amd64.tar.gz
+```
+
+Releases の成果物は C コンパイラを使わずに作っています。そのため macOS 版は Keychain の
+端末解除を含まず、マスターパスワードだけで使います。
+
+### Go で入れる
+
 Go 1.25 は source の最低言語版です。日常利用には security patch を含む現在サポートされる安定版を推奨し、CI は Go 1.27.2 で検査します（2026-10-11 確認）。
 
 ```sh

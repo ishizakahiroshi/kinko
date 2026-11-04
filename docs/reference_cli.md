@@ -223,8 +223,9 @@ kinko --help
 kinko -h
 ```
 
-source tree の既定 version は `dev`。release build では linker flag
-`-X main.version=<version>` で埋め込む設計だが、release workflow はまだ提供していない。
+source tree の既定 version は `dev`。`.github/workflows/release.yml` は `v*` tag の push で
+linker flag `-X main.version=<tag>` を埋め込んだ成果物を作る。`release/**` branch への push では
+公開せずに同じ build と検査だけを行い、version は `dev-<commit の先頭 7 文字>` になる。
 
 ## 環境変数
 
