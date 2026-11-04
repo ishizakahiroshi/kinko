@@ -42,6 +42,11 @@ func TestInvalidArgumentsDoNotConsumeInputOrCreateVault(t *testing.T) {
 		}},
 		{"run missing command", func() error { return RunWithOptions([]string{"--env-file=a", "--"}, CommandOptions{}) }},
 		{"unlock option", func() error { return UnlockWithOptions([]string{"setup", "--invalid"}, CommandOptions{}) }},
+		{"backup none", func() error { return BackupWithOptions(nil, CommandOptions{}) }},
+		{"backup unknown", func() error { return BackupWithOptions([]string{"sync"}, CommandOptions{}) }},
+		{"backup add missing", func() error { return BackupWithOptions([]string{"add"}, CommandOptions{}) }},
+		{"backup status extra", func() error { return BackupWithOptions([]string{"status", "x"}, CommandOptions{}) }},
+		{"backup restore one", func() error { return BackupWithOptions([]string{"restore", "abcdef12"}, CommandOptions{}) }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -244,6 +249,8 @@ func TestPracticalCLIHelper(t *testing.T) {
 		err = RunWithOptions(args[1:], options)
 	case "export":
 		err = ExportWithOptions(args[1:], options)
+	case "backup":
+		err = BackupWithOptions(args[1:], options)
 	case "marker":
 		err = os.WriteFile(args[1], nil, 0o600)
 	case "child":

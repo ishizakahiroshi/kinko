@@ -54,6 +54,18 @@ func (s *Session) Source() Source { return s.source }
 // Save は同じunlock sessionのpasswordで安全に保存する。
 func (s *Session) Save() error { return s.vault.Save(s.password) }
 
+// VerifyDestination は保存先の写しを、このsessionと同じpasswordで開いて確かめる。
+// passwordはcallerへ返さない。
+func (s *Session) VerifyDestination(d vault.Destination) (vault.VerifyResult, error) {
+	return s.vault.VerifyDestination(d, s.password)
+}
+
+// RestoreGeneration は世代を、このsessionと同じpasswordで開けることを確かめてから
+// 新しいfileへ書き出す。passwordはcallerへ返さない。
+func (s *Session) RestoreGeneration(src, dest string) error {
+	return vault.RestoreGeneration(src, dest, s.password)
+}
+
 // PasswordForExplicitExport はexportの「空ならsourceと同じ」という明示契約のためだけに
 // passwordをcallerへ返す。callerはchild processや診断へ渡してはならない。
 func (s *Session) PasswordForExplicitExport() string { return s.password }

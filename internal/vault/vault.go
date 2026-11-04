@@ -42,6 +42,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"filippo.io/age"
 )
@@ -72,6 +73,10 @@ type Vault struct {
 	doc      document
 	snapshot [sha256.Size]byte
 	loaded   bool
+	// noGenerations is set only for export copies, which are not changes to a vault.
+	noGenerations bool
+	// notices are value-free notes from the last Save (see SaveNotices).
+	notices []string
 }
 
 // Create は新しい保管庫を作る。
@@ -258,7 +263,8 @@ func (v *Vault) save(password string, replace func(string, string) error) (err e
 		return err
 	}
 	defer func() { err = errors.Join(err, unlock()) }()
-	if err := v.checkSnapshot(); err != nil {
+	current, err := v.checkSnapshot()
+	if err != nil {
 		return err
 	}
 	if _, err := v.EnsureID(); err != nil {
@@ -266,9 +272,40 @@ func (v *Vault) save(password string, replace func(string, string) error) (err e
 	}
 	dir := filepath.Dir(v.path)
 
+	// Local generations: keep the ciphertext being replaced ("before") and the
+	// new ciphertext ("after") outside the vault directory before the vault is
+	// replaced, so a mistaken add/rm or a lost vault file can be recovered.
+	// If either generation cannot be stored, the vault is left unchanged.
+	var store *generationStore
+	if !v.noGenerations {
+		store, err = openGenerationStore(v.doc.VaultID)
+		if err != nil {
+			return err
+		}
+		parent := ""
+		if current != nil {
+			before, err := store.put(current)
+			if err != nil {
+				return err
+			}
+			// The live ciphertext is committed by definition. This also repairs a
+			// missing marker when a previous save stopped after replacing the vault.
+			if err := store.markCommitted(before); err != nil {
+				return err
+			}
+			parent = before
+		}
+		if err := v.doc.stampGeneration(parent); err != nil {
+			return err
+		}
+	}
+
 	recipient, err := age.NewScryptRecipient(password)
 	if err != nil {
 		return fmt.Errorf("kinko: 鍵を組み立てられません: %w", err)
+	}
+	if testScryptWorkFactor > 0 {
+		recipient.SetWorkFactor(testScryptWorkFactor)
 	}
 
 	var buf bytes.Buffer
@@ -286,6 +323,36 @@ func (v *Vault) save(password string, replace func(string, string) error) (err e
 	}
 
 	nextSnapshot := sha256.Sum256(buf.Bytes())
+	after := ""
+	v.notices = nil
+	if store != nil {
+		// Keep the generations within capacity. Prune unprotected old ones first;
+		// if that is not enough, stop before changing the vault.
+		used, err := store.usage()
+		if err != nil {
+			return err
+		}
+		if used+int64(buf.Len()) > generationCapacity {
+			live := ""
+			if current != nil {
+				live = hashHex(current)
+			}
+			if err := store.prune(live, time.Now(), v.unsentKeeper()); err != nil {
+				return err
+			}
+			if used, err = store.usage(); err != nil {
+				return err
+			}
+			if used+int64(buf.Len()) > generationCapacity {
+				return ErrGenerationsFull
+			}
+		}
+		// Stored as a candidate (no committed marker) until the vault is replaced.
+		after, err = store.put(buf.Bytes())
+		if err != nil {
+			return err
+		}
+	}
 	tmp, err := os.CreateTemp(dir, ".kinko-*.tmp")
 	if err != nil {
 		return fmt.Errorf("kinko: 一時ファイルを作れません: %w", err)
@@ -329,10 +396,32 @@ func (v *Vault) save(password string, replace func(string, string) error) (err e
 	}
 	v.snapshot = nextSnapshot
 	v.loaded = true
+	if store != nil {
+		// The change is already saved. A failure here only leaves the new
+		// generation looking like an interrupted candidate; the next save marks
+		// it committed (see the "before" step above), so it is not an error.
+		_ = store.markCommitted(after)
+		// Retention is best effort: the change is saved even if pruning fails,
+		// and the next save tries again.
+		if err := store.prune(after, time.Now(), v.unsentKeeper()); err != nil {
+			v.notices = append(v.notices, "kinko: 古い世代の整理に失敗しました（変更は保存済み。次の保存で再試行します）")
+		}
+		if used, err := store.usage(); err == nil && float64(used) > generationWarnRatio*float64(generationCapacity) {
+			v.notices = append(v.notices, fmt.Sprintf(
+				"kinko: 世代の保存領域が上限の %d%% を超えています。上限に達すると変更できなくなります",
+				int(generationWarnRatio*100)))
+		}
+	}
 	return nil
 }
 
 const vaultIDBytes = 16
+
+// testScryptWorkFactor is 0 in production, which keeps age's default work
+// factor. Only this package's tests lower it (in TestMain) so that the many
+// save/open round trips stay within the test timeout under -race. It is not
+// reachable from configuration or the environment.
+var testScryptWorkFactor int
 
 func validVaultID(id string) bool { return ValidID(id) }
 

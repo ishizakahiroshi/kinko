@@ -110,8 +110,10 @@ func AddWithOptions(args []string, options CommandOptions) error {
 	if err := result.Session.Save(); err != nil {
 		return err
 	}
+	printSaveNotices(result.Session.Vault())
 
 	fmt.Fprintf(os.Stderr, "保存しました: %s\n", name)
+	autoPush(result.Session.Vault())
 	return nil
 }
 
@@ -207,8 +209,10 @@ func RemoveWithOptions(args []string, options CommandOptions) error {
 	if err := result.Session.Save(); err != nil {
 		return err
 	}
+	printSaveNotices(result.Session.Vault())
 
 	fmt.Fprintf(os.Stderr, "削除しました: %s\n", args[0])
+	autoPush(result.Session.Vault())
 	return nil
 }
 

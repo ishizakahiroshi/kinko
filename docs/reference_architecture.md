@@ -162,14 +162,55 @@ memory に保持する。これは更新検出用で、暗号認証の代替で�
 
 1. `<正規化対象>.lock` を排他的 mkdir で作る。存在すれば待たずに `ErrLocked`
 2. lock 内で現在の暗号文 fingerprint と読込時 snapshot を比較。不一致・削除は `ErrConflict`
-3. 任意の vault ID が無ければ付与し、JSON 全体を age の暗号文へ変換
-4. 同じ directory に暗号化 temp を作り、Unix 系では mode `0600` にする
-5. 暗号文を write、file sync、close
-6. 更新は temp を対象へ rename。新規作成 / export は hard link で完成済み temp を公開し、
+3. 任意の vault ID が無ければ付与する
+4. 手元の世代（export を除く）: 現在の暗号文を「変更前の世代」として保存し、確定の印を付ける。
+   暗号化 JSON の任意 field `generation` へ、新しい世代 ID・親世代（変更前の暗号文の SHA-256）・時刻を書く
+5. JSON 全体を age の暗号文へ変換し、「変更後の世代」を確定の印なしで保存する
+6. 同じ directory に暗号化 temp を作り、Unix 系では mode `0600` にする
+7. 暗号文を write、file sync、close
+8. 更新は temp を対象へ rename。新規作成 / export は hard link で完成済み temp を公開し、
    既存の名前があれば原子的に拒否する。Stat→Rename だけで新規を作らない
-7. 成功後に snapshot を更新。自分の temp を best-effort 削除し、lock を解除
+9. 成功後に snapshot を更新し、変更後の世代へ確定の印を付ける。自分の temp を best-effort 削除し、lock を解除
 
-公開前の保存・置換失敗では元の暗号文を保持する。競合した snapshot は自動再試行しない。
+公開前の保存・置換失敗では元の暗号文を保持する。世代を保存できない場合も、原本を置き換えずに失敗する。
+競合した snapshot は自動再試行しない。
+
+### 手元の世代
+
+置き場は `KINKO_GENERATIONS_DIR`、未設定なら `<os.UserConfigDir()>/kinko-generations`（既定の保管庫の
+directory の外）。その下に vault ID から作った不透明な名前の collection directory を作り、vault ID 自体は
+暗号文の外へ書かない。世代は暗号文そのものを `<暗号文の SHA-256>.age` として、同じ名前があれば内容を
+比べて再利用し、別の内容なら `ErrGenerationConflict` で止める（上書きしない）。新規公開は temp の
+sync・close の後に hard link で行い、読み戻して hash を照合する。確定の印は `<hash>.ok` の空 file。
+印の無い世代は、原本の置き換え前に止まった変更（中断候補）である。原本の置き換え後に印を付ける前で
+止まった場合は、次の保存が現在の暗号文を変更前の世代として保存するときに印を付けて直す。
+
+世代は通常の保管庫と同じ形式なので、同じ password で開ける。親世代の情報は暗号化された中身にだけあり、
+旧 kinko で保存すると `generation` は前の値のまま残る（親子関係はその保存の分だけずれる）。Unix 系では
+世代の directory も sync するが、Windows では directory の sync を行わない。
+
+保持（DESIGN の暫定既定）: 確定済みの世代のうち「更新時刻の新しい 32 件」「30 日以内」「今の原本」「保護の印
+`<hash>.pin` があるもの」のどれかに当たるものを残し、それ以外を保存の成功後に消す。印の無い中断候補は消さない。
+整理の失敗は保存の失敗にせず、次の保存で再試行する。collection の合計が 512 MiB を超えそうなら先に整理し、
+それでも超える場合は原本を置き換えずに `ErrGenerationsFull` で止める（読み出しは続けられる）。80% を超えたら
+CLI が stderr に 1 行の注意を出す。
+
+### PC 外の保存先
+
+保存先の一覧（場所・目印 ID・登録時のディスク識別・同じディスクか）は暗号化された文書の任意 field
+`backup_destinations` に持ち、平文の設定 file を作らない。export はこの field と `generation` を写さない。
+保存先には `kinko-backup/<collection>/` を作り、乱数の目印 `.kinko-destination` を置く。転送の前後に、root が
+あること・目印が一致すること・ディスク識別が登録時と同じことを確かめ、違えば何も写さない。保存先の root が
+消えても kinko は作り直さない（抜いた USB の mount point が空の local folder に変わる事故を、目印の不一致で止める）。
+写すのは確定済みの世代だけで、新規の名前として追記し、削除・整理・上書きは伝えない。保存先に無い世代は手元の
+保持の整理から外す。ディスク識別は volume / filesystem の単位で、同じ物理ディスクの別 partition や、物理的に
+同じ場所に置いた媒体までは見分けられない（PC 外かどうかの最終確認は利用者に残る）。
+
+`add` / `rm` の後の自動転送は別 goroutine で行い、2 秒で待つのをやめる。待つのをやめた後に process が終わると、
+保存先に `.gen-*.tmp` が残ることがある（暗号文だけが入る）。`verify` は写しの hash を全件照合し、1 件を同じ password で
+開いて件数を返す。restore は世代を byte 単位でそのまま新しい file に書くので、復元した file は元の vault ID・保存先の
+登録を持つ。復元した file を本体として使い続ける場合は、旧い保管庫を使わないこと（同じ vault ID の世代が同じ
+collection に並ぶ）。
 `export` は空の destination を先に作らず、公開失敗後に destination を削除しない。
 旧 format 1 の source に ID が無い場合は source を先に保存し、同じ ID を copy する。
 backup の公開が失敗しても、この互換 metadata の付与は残り得る。
@@ -202,10 +243,10 @@ password違いまたはage暗号文の破損は、ageの制約上 `ErrWrongPassw
 future formatは更新を要求し、provider credentialのvault ID不一致はstale credentialとして
 停止する。これらを越える自動復旧、Google Drive API、cloud同期の監視はkinkoの責務ではない。
 
-予定（v0.1.0 で実装予定・現時点では未実装）: 変更前後の暗号文を原本のフォルダの外（OS の利用者データ領域）へ
-自動で世代保存し、利用者が指定した保存先（別媒体・別 PC）へ追記だけで転送する。転送先へ削除や整理を
-伝えず、復元は原本を上書きせず別の場所へ行う。外部サービスの account や token は kinko に持たせず、
-cloud sync・network service は引き続き持たない。実装されるまで、上の `export` が唯一の備えである。
+変更前後の暗号文は、原本のフォルダの外（OS の利用者データ領域）へ自動で世代保存する（上の「手元の世代」。
+同じ disk なので PC 全損の備えには数えない）。利用者が `kinko backup add` で指定した保存先（別媒体・別 PC）へは
+追記だけで転送し、転送先へ削除や整理を伝えない（上の「PC 外の保存先」）。復元は原本を上書きせず別の場所へ行う。
+外部サービスの account や token は kinko に持たせず、cloud sync・network service は引き続き持たない。
 
 ## 脅威モデル
 

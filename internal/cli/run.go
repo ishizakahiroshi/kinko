@@ -316,6 +316,7 @@ func ExportWithOptions(args []string, options CommandOptions) error {
 		if err := session.Save(); err != nil {
 			return err
 		}
+		printSaveNotices(src)
 	}
 	if err := src.Export(dest, destPassword); err != nil {
 		return err

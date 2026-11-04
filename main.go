@@ -93,6 +93,8 @@ func run() error {
 		return cli.ExportWithOptions(args, options)
 	case "unlock":
 		return cli.UnlockWithOptions(args, options)
+	case "backup":
+		return cli.BackupWithOptions(args, options)
 	case "version", "--version", "-v":
 		if len(args) != 0 {
 			return errors.New("使い方: kinko version")
@@ -125,13 +127,21 @@ func usage() {
   kinko unlock setup [オプション]                端末解除を登録する
   kinko unlock status                            端末解除の状態を表示する
   kinko unlock disable [オプション]              端末解除を無効にする
+  kinko backup status                            世代と PC 外の保存先の状態を表示する
+  kinko backup list                              手元の世代を新しい順に表示する
+  kinko backup add <場所>                        PC 外の保存先を登録して写す
+  kinko backup remove <場所> [--yes]             保存先の登録を外す（写しは消さない）
+  kinko backup push                              未転送の世代を保存先へ写す
+  kinko backup verify <場所>                     保存先の写しを開けるか確かめる
+  kinko backup restore <世代> <復元先>           世代を新しいファイルへ復元する
 
 オプション:
   kinko --master-password <command> ...          OS providerを使わずpasswordを入力する
 
 環境変数:
-  KINKO_VAULT     保管庫の場所（既定はユーザー設定ディレクトリ配下）
-  KINKO_PASSWORD  パスワード（自動処理用。手で使うときは設定しないこと）
+  KINKO_VAULT            保管庫の場所（既定はユーザー設定ディレクトリ配下）
+  KINKO_PASSWORD         パスワード（自動処理用。手で使うときは設定しないこと）
+  KINKO_GENERATIONS_DIR  手元の世代の置き場（既定はユーザー設定ディレクトリ配下の kinko-generations）
 
 テンプレの書き方（このファイルはリポジトリへ入れてよい）:
   DB_PASSWORD=${kinko:myapp/db_password}

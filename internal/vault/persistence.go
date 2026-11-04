@@ -72,31 +72,33 @@ func lockWriter(path string) (func() error, error) {
 	}, nil
 }
 
-func (v *Vault) checkSnapshot() error {
+// checkSnapshot returns the current ciphertext (nil for a vault being created)
+// after confirming nobody else changed it since Open.
+func (v *Vault) checkSnapshot() ([]byte, error) {
 	info, err := os.Lstat(v.path)
 	if errors.Is(err, os.ErrNotExist) && !v.loaded {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return ErrConflict
+			return nil, ErrConflict
 		}
-		return fmt.Errorf("kinko: 保管庫を確認できません: %w", err)
+		return nil, fmt.Errorf("kinko: 保管庫を確認できません: %w", err)
 	}
 	if !v.loaded {
-		return fmt.Errorf("kinko: 保管庫が既にあります: %w", ErrConflict)
+		return nil, fmt.Errorf("kinko: 保管庫が既にあります: %w", ErrConflict)
 	}
 	if !info.Mode().IsRegular() {
-		return ErrConflict
+		return nil, ErrConflict
 	}
 	raw, err := os.ReadFile(v.path)
 	if err != nil {
-		return fmt.Errorf("kinko: 保管庫を再確認できません: %w", err)
+		return nil, fmt.Errorf("kinko: 保管庫を再確認できません: %w", err)
 	}
 	if sha256.Sum256(raw) != v.snapshot {
-		return ErrConflict
+		return nil, ErrConflict
 	}
-	return nil
+	return raw, nil
 }
 
 // Export publishes a complete encrypted copy without an intermediate empty
@@ -110,7 +112,17 @@ func (v *Vault) Export(path, password string) error {
 	if err != nil {
 		return err
 	}
-	out := &Vault{path: canonical, doc: v.doc}
+	// An export is a separate copy, not a change to this vault: it gets no local
+	// generations and carries neither this vault's lineage nor its backup
+	// destinations (opening the copy must not push into this vault's backups).
+	doc := v.doc
+	doc.Extra = make(map[string]json.RawMessage, len(v.doc.Extra))
+	for key, value := range v.doc.Extra {
+		if key != generationMetaKey && key != destinationsKey {
+			doc.Extra[key] = value
+		}
+	}
+	out := &Vault{path: canonical, doc: doc, noGenerations: true}
 	return out.Save(password)
 }
 

@@ -3,10 +3,19 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"unicode/utf8"
 
 	"github.com/ishizakahiroshi/kinko/internal/vault"
 )
+
+// printSaveNotices writes value-free notes from the last save (for example, a
+// nearly full generations area) to stderr, never to stdout.
+func printSaveNotices(v *vault.Vault) {
+	for _, notice := range v.SaveNotices() {
+		fmt.Fprintln(os.Stderr, notice)
+	}
+}
 
 // Init は新しい保管庫を作る。
 func Init(args []string) error {
@@ -40,6 +49,7 @@ func Init(args []string) error {
 	if err != nil {
 		return err
 	}
+	printSaveNotices(v)
 
 	fmt.Printf("保管庫を作りました: %s\n", v.Path())
 	fmt.Println("パスワードを忘れると中身は取り出せません。復旧手段はありません。")

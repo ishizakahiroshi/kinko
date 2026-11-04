@@ -20,7 +20,7 @@ OS credentialへの保存、各OSの実機acceptance、同期、正式なrelease
 - 暗号 primitive や独自暗号 format を自作しない。暗号化は `filippo.io/age` に委ねる
 - team 向け ACL、監査ログ、承認 workflow、network service、cloud sync、外部サービスの資格情報を持たない。
   変更前後の自動の世代保存（原本のフォルダの外）と、利用者が指定した保存先への一方向の転送はする
-  （v0.1.0 で実装予定・未実装。方式は Issue #5 の検討結果）
+  （方式は Issue #5 の検討結果。`kinko backup` と `internal/vault/generations.go`・`backup.go` で実装）
 - GUI、Web UI、自動 updater を現段階の標準 scope にしない
 - SOPS のような部分暗号化や Git 管理可能な vault を目指さない。vault は Git に入れない
 - OS credential、生体認証、Secret Serviceの機能を追加・変更するときは、対象planの

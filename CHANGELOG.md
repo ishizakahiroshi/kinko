@@ -17,6 +17,10 @@
   Secret Service を使う。macOS の Keychain は C コンパイラ付きで作った場合だけ含まれる
 - 保存時の競合検出（開いた後に他の書き込みがあれば上書きせず止める）と書き込み lock
 - GitHub Releases への配布（Windows / macOS / Linux、amd64 と arm64）と `SHA256SUMS`
+- 復旧の備え: `init` / `add` / `rm` のたびに変更前後の保管庫を自動で世代として残す（最新 32 件と 30 日以内、
+  上限 512 MiB）。`kinko backup status / list / add / remove / push / verify / restore`。登録した PC 外の保存先へは
+  変更のたびに追記だけで写し（最大 2 秒待ち）、削除・上書きはしない。復元は新しいファイルへ書き、今の保管庫は変えない
+- 環境変数 `KINKO_GENERATIONS_DIR`（手元の世代の置き場）
 
 ### 確認の状態
 

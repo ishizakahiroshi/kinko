@@ -199,6 +199,36 @@ statusはvaultを開かず、vault fileやbackupを変更しない。
 - vault、backup、format、master passwordは変更しない
 - credentialが未設定またはproviderが未対応なら安全なerrorを返し、passwordを表示しない
 
+### `kinko backup <サブコマンド>`
+
+手元の世代（`KINKO_GENERATIONS_DIR` 参照）と、PC 外の保存先への写しを扱う。どのサブコマンドも
+保管庫を通常の解除順（端末解除 → password）で開く。値・名前・vault ID は出力しない。
+
+- `backup status`: 標準出力へ `generations`（確定済みの世代数）、`latest`、`interrupted`（途中で止まった変更の世代数）、
+  `usage`（使用量 / 上限）、`destinations` と保存先ごとの `state`（`ok` / `offline` / `mismatch` / `error`）、
+  `same-disk`（`true` / `false` / `unknown`）、`pending`（未転送数）、`verified` を出す。別のディスクと確認できた
+  保存先が 0 件なら、標準エラーへ「PC の故障・紛失には備えられていません」を出す。
+- `backup list`: 手元の世代を新しい順に `<hash 先頭 12 文字>  <時刻>  <大きさ>  <current|saved|interrupted>` で出す。
+  中身は開かない。
+- `backup add <場所>`: 既に存在する directory だけを保存先として登録する（無い場所は作らない）。その下に
+  `kinko-backup/<不明瞭な名前>/` と目印ファイルを作り、ディスクの識別（Windows は volume serial、Linux / macOS は
+  device ID）を記録してから、確定済みの世代をすべて写す。登録は暗号化された保管庫の中に保存するので、
+  この操作でも世代が増える。保管庫と同じディスクなら PC 外に数えず、識別できなければ「確認できない」と表示する。
+- `backup remove <場所> [--yes]`: 未転送の件数を示し、TTY の確認または `--yes` の後に登録だけを外す。
+  保存先の写しは消さない。
+- `backup push`: 保存先ごとに、無い確定済みの世代を写す。写しは同じ名前の新規ファイルとして、temp の sync・close の
+  後に hard link で公開し、読み戻して hash を照合する。既にある名前は内容を比べて再利用し、上書き・削除はしない。
+  保存先の root が無ければ `offline`、目印かディスクの識別が違えば `mismatch` で何も写さない。
+- `backup verify <場所>`: 保存先の写しをすべて読み戻して hash を照合し、今の保管庫と同じ世代（無ければ最も新しい写し）を
+  同じ password で開く。結果は保存先に hash の先頭と時刻だけを記録し、`status` の `verified` に出る。
+- `backup restore <世代> <復元先>`: `list` の hash（8 文字以上）で世代を指定する。手元の世代、次に接続中の保存先から探す。
+  hash の一致と同じ password で開けることを確かめてから、復元先へ新規ファイルとして書く。復元先が既にあれば止め、
+  今の保管庫は変えない。項目 1 件だけ戻すときは、復元先を `KINKO_VAULT` で開いて `get` し、今の保管庫へ `add` する。
+
+`add` と `rm` の保存が成功した後、保存先があれば 1 回だけ自動で写す（最大 2 秒。`get`・`list`・`run` では写さない）。
+間に合わない・接続されていない場合も変更は成功のままで、標準エラーに未転送の件数を出す。保存先に写っていない世代は、
+手元の保持の整理で消さない（保存先が接続されていない間は手元の世代が増え続け、上限に達すると変更を止める）。
+
 ### `kinko --master-password <command> ...`
 
 `add`、`get`、`list`、`rm`、`run`、`export`でOS providerを使わず、既存のpassword readerを
@@ -239,6 +269,19 @@ Windows の一般的な環境では `%AppData%\kinko\vault.age` になる。実�
 
 `KINKO_VAULT` は子プロセスから自動除外しない。パス自体を子へ見せたくない場合は、
 起動前に環境を分ける必要がある。
+
+### `KINKO_GENERATIONS_DIR`
+
+手元の世代（変更前後の暗号文）の置き場を上書きする。未設定時は `os.UserConfigDir()` 配下の
+`kinko-generations`（Windows の一般的な環境では `%AppData%\kinko-generations`）を使う。
+`init`・`add`・`rm`、端末解除の setup で旧保管庫へ ID を付ける保存のたびに、変更前と変更後の世代が
+ここへ追加される。`get`・`list`・`run`・`export` は世代を作らない。世代は通常の保管庫と同じ形式で、
+同じ password で開ける。世代を保存できないときは保管庫を変更せずに失敗する。
+保管庫と同じ directory を指定すると、directory ごと消えたときに世代も失う。
+
+古い世代は保存のたびに整理する。最新 32 件と 30 日以内の世代、今の保管庫、変更が途中で止まった世代は
+残す。保管庫 1 つ分の世代が 512 MiB を超える場合、残すべき世代を消して続けることはせず、変更を止めて
+error にする（`get`・`list` は使える）。上限の 80% を超えた保存では、標準エラーへ注意を 1 行出す。
 
 ### `KINKO_PASSWORD`
 
