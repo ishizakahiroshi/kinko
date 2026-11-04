@@ -83,6 +83,29 @@ func TestExpandDuplicateDetectionIsCaseInsensitive(t *testing.T) {
 	}
 }
 
+// テンプレの1行は bufio.Scanner の既定上限で読む。改行を除いて 65,536 バイト以上の行は、
+// 子プロセスへ渡す環境を作る前にエラーで止まる（docs/reference_cli.md に明記した契約）。
+func TestExpandLineLengthLimit(t *testing.T) {
+	const limit = 64 * 1024
+	accepted := "LONG=" + strings.Repeat("a", limit-1-len("LONG=")) + "\nNEXT=1\n"
+	got, err := expand(accepted, nil)
+	if err != nil {
+		t.Fatalf("上限未満の行を拒否した: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("展開結果が %d 件、want 2", len(got))
+	}
+
+	rejected := "LONG=" + strings.Repeat("a", limit-len("LONG=")) + "\nNEXT=1\n"
+	got, err = expand(rejected, nil)
+	if err == nil {
+		t.Fatalf("上限以上の行を受理した: %d 件", len(got))
+	}
+	if got != nil {
+		t.Fatalf("エラー時に部分的な展開結果を返した: %d 件", len(got))
+	}
+}
+
 func TestLoadEnvStripsUTF8BOMFromFirstKey(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "template.env")
 	content := "\xef\xbb\xbfPLAIN_KEY=plain-value\n"

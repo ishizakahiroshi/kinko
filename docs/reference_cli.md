@@ -292,6 +292,8 @@ COMBINED=prefix-${kinko:example-service/id}-suffix
 - inline comment を解釈しない
 - variable expansion、command substitution、escape sequence を解釈しない
 - multiline value を扱わない
+- 1 行の長さは改行を除いて 65,535 バイトまで。65,536 バイト以上の行があると
+  `token too long` を含む error で止まり、子プロセスを起動しない
 - `${kinko:...}` を literal として escape する構文はない
 
 テンプレートには 1 行 1 環境変数の単純な `KEY=VALUE` だけを書く。

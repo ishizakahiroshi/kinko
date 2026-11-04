@@ -118,6 +118,9 @@ func (windowsCredentialManager) write(route Route, payload []byte) error {
 		Persist:            credPersistLocalMachine,
 		UserName:           user,
 	}
+	// LazyProc.Call は //go:uintptrescapes なので、native は呼び出しが戻るまで生存する。
+	// target / user / blob は native から参照されて同じく生存し、Go のヒープは object を
+	// 移動しないため、CredWriteW が読む間にアドレスが変わることはない。
 	ret, _, _ := procCredWrite.Call(uintptr(unsafe.Pointer(&native)), 0)
 	if ret == 0 {
 		return NewProviderError(ErrorUnavailable)
