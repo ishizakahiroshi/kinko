@@ -28,10 +28,11 @@ last_reviewed: 2026-10-11
 | `init`, `add`, `get`, `list`, `run`, `export` | 実装済み |
 | 秘密の削除 | `rm` として実装済み |
 | マスターパスワード | 実装済み |
+| 変更前後の世代保存・PC 外への追記転送・復元（`kinko backup`） | 実装済み（Issue #5 の方式）。network 共有の保存先、別 PC での復元、macOS / Linux 実機は未確認 |
 | Windows Hello + Credential Manager 連携 | build 22000以上のadapter実装済み。Windows 11実機acceptance未完了 |
-| macOS Keychain user presence | `darwin && cgo` adapter実装済み。macOS実機acceptance未完了 |
+| macOS Keychain user presence | `darwin && cgo` adapter実装済み。macOS実機acceptance未完了。Releases の成果物（CGO なし）には含まれない |
 | Linux Secret Service 連携 | `session-protected` adapter実装済み。対象desktop acceptance未完了 |
-| GitHub Releases の配布成果物 | 未提供 |
+| GitHub Releases の配布成果物 | tag 駆動の `release.yml` を用意済み。branch での試し実行のみで、版付きの公開はまだ無い |
 
 未提供項目と実機acceptance待ちは、提供時期を約束するロードマップではない。
 
@@ -259,6 +260,8 @@ future formatは更新を要求し、provider credentialのvault ID不一致はs
 - 保存途中の失敗で既存保管庫を途中まで上書きすること
 - `KINKO_PASSWORD` を `run` の子プロセスへそのまま継承すること
 - 対応OSのcredentialを毎回通常password promptへ露出させること（実機acceptance済みの環境に限る）
+- `add` / `rm` の誤操作や保管庫 file の削除・破損で、直前の内容を失うこと（手元の世代の保持範囲内）
+- PC の故障・紛失で保管庫を失うこと（PC 外の保存先へ写し終えた世代まで。同じパスワードが必要）
 
 ### 保護しないもの
 
@@ -269,7 +272,9 @@ future formatは更新を要求し、provider credentialのvault ID不一致はs
 - 子孫プロセスへの環境変数継承
 - swap、hibernation、crash dump に平文が残る可能性
 - 弱いマスターパスワードに対するオフライン推測
-- 破損、誤削除、パスワード忘れからの自動復旧
+- パスワード忘れからの復旧（パスワードの控えは利用者が別に保管する）
+- 保持範囲を過ぎた世代、PC 外へ写す前の世代、全ての写しを同時に失った場合
+- 世代や PC 外の写しに残る、消したはずの古い値（漏れた値は発行元で失効させる）
 - lock を守らない writer、hard-link 別名、network/sync FS による同時変更
 
 ## 運用上の不変条件
@@ -279,6 +284,8 @@ future formatは更新を要求し、provider credentialのvault ID不一致はs
 - `KINKO_PASSWORD` は非対話処理に限定し、手作業の常設環境変数にしない
 - `run` で起動するコマンドを信頼境界として扱う
 - `export` のバックアップを本体とは別の安全な場所へ置く
+- PC の故障に備えるなら、保管庫と別のディスクの保存先を `kinko backup add` で登録し、`backup verify` で開けることを確かめる
+- 世代ファイルを直接 `add` / `rm` しない（`backup restore` で新しい file に戻してから使う）
 - `export` はsource vaultの`vault_id`を引き継ぎ、backupから復元したときのprovider照合を保つ
 - パスワード変更は、別パスワードへの `export` と切替で行う
 - 競合エラーを無視せず最新の vault を開き直し、旧 writer と混在させない
@@ -319,6 +326,15 @@ future formatは更新を要求し、provider credentialのvault ID不一致はs
 | source / backupのvault ID継承 | `TestExportPreservesVaultID` |
 | 子へマスターパスワードを渡さない | `TestChildEnvironmentDoesNotInheritVaultPassword` |
 | テンプレートで予約変数を再注入させない | `TestExpandRejectsReservedPasswordVariable` |
+| テンプレートの 1 行の上限 | `TestExpandLineLengthLimit` |
+| 変更前後の世代と lineage | `TestGenerationsKeepEveryStepAndLinkLineage`, `TestLegacyVaultBaselineIsStored` |
+| 世代を保存できなければ原本を変えない・中断候補と印の修復 | `TestGenerationStoreFailureLeavesVaultUnchanged`, `TestInterruptedSavesAreReconciled` |
+| 保持の整理と容量の上限 | `TestRetentionKeepsNewestCountWhenOld`, `TestRetentionKeepsEverythingWithinAge`, `TestRetentionNeverRemovesCandidatesOrPinned`, `TestCapacityStopsWritesButKeepsReads` |
+| PC 外への追記だけの転送・抜いた保存先の取り違え | `TestPushCopiesCommittedGenerationsAppendOnly`, `TestOfflineDestinationIsNotRecreatedAndProtectsGenerations` |
+| 保存先の確認・非上書きの復元 | `TestVerifyDestinationOpensTheLiveCopyAndDetectsDamage`, `TestRestoreWritesANewFileAndLeavesTheVault` |
+| 書き込みと転送の同時実行・時計の巻き戻り | `TestPushWhileWritingKeepsDestinationConsistent`, `TestClockRollbackDoesNotLoseGenerations` |
+| 製品の scrypt の強さ（test だけ下げる） | `TestProductionSaveKeepsDefaultScryptWorkFactor` |
+| backup command の一連操作と出力に値が出ない | `TestBackupCommandsEndToEnd`, `TestBackupOutputHasNoSecretValues` |
 
 `TestDailyWorkflowInSubprocesses` は Go test executable から production command 関数を呼び、合成データの
 `init -> add -> get -> list -> run -> export -> backup reopen -> rm`、子の input/output/exit と

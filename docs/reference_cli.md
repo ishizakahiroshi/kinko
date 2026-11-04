@@ -231,7 +231,7 @@ statusはvaultを開かず、vault fileやbackupを変更しない。
 
 ### `kinko --master-password <command> ...`
 
-`add`、`get`、`list`、`rm`、`run`、`export`でOS providerを使わず、既存のpassword readerを
+`add`、`get`、`list`、`rm`、`run`、`export`、`backup`でOS providerを使わず、既存のpassword readerを
 選ぶboolean option。password値をargumentへ置かない。空でない`KINKO_PASSWORD`は既存のautomation
 契約としてreaderから優先される。
 

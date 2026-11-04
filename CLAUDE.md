@@ -11,9 +11,10 @@ fresh public clone でも有効な内容に保つこと。 -->
 関係のない秘密まで画面や会話ログへ流れる事故を構造的に減らす。
 
 現在は prerelease。マスターパスワード方式の vault CRUD、名前一覧、env template を
-展開する `run`、暗号化済み export、OSごとの端末解除 adapter まで実装済み。実在する
-OS credentialへの保存、各OSの実機acceptance、同期、正式なrelease配布は未完了であり、
-実機確認済みとして扱わない。
+展開する `run`、暗号化済み export、OSごとの端末解除 adapter、変更前後の世代保存と PC 外への
+追記転送・復元（`kinko backup`）、tag 駆動の `release.yml` まで実装済み。実在する
+OS credentialへの保存、各OSの実機acceptance、版付きの release 公開は未完了であり、
+実機確認済みとして扱わない。同期は対象外。
 
 ## やらないこと（スコープ外）
 
@@ -41,7 +42,9 @@ OS credentialへの保存、各OSの実機acceptance、同期、正式なrelease
 - `main.go`: command dispatch、usage、version、top-level error 表示
 - `internal/cli/`: command 実装、path/password 入力、env template 展開、子 process 起動
 - `internal/unlock/`: 共通解除service、vault ID照合、OS別provider、fallback分類
-- `internal/vault/`: age 暗号化、versioned JSON、名前単位の CRUD、安全な file 置換
+- `internal/vault/`: age 暗号化、versioned JSON、名前単位の CRUD、安全な file 置換、
+  世代保存と保持（`generations.go`）、PC 外の保存先・転送・確認・復元（`backup.go`）、ディスク識別（`volume_*.go`）
+- `internal/cli/backup.go`: `kinko backup` の各サブコマンドと add / rm 後の自動転送
 - `docs/reference_architecture.md`: 設計原則、脅威モデル、vault format、安全性の境界
 - `docs/reference_cli.md`: command、環境変数、template grammar、exit/output 契約
 - `scripts/secrets-scan.dual.mjs`: public source へ実環境識別子や秘密を入れない content gate（doxguard 0.2.0 strict を呼ぶ。Linux x64 のみ）

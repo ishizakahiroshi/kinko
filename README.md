@@ -8,8 +8,10 @@ AI CLI や検索コマンドが設定ファイル全体を読んだときに、�
 参照名だけを書いたテンプレートを置きます。
 
 > [!WARNING]
-> 現在は prerelease です。主要コマンドと OS adapter の共通実装はありますが、実在の OS credential
-> への保存、各 OS の実機 acceptance、バージョン付きの配布成果物、複数端末同期は未完了です。
+> 現在は prerelease です。マスターパスワード方式のコマンドと復旧の備え（`kinko backup`）は
+> Windows / macOS / Linux の CI で test していますが、端末解除（Windows Hello・macOS Keychain・
+> Linux Secret Service）は実機で確かめていません。版付きの配布成果物はまだ公開しておらず、
+> 複数端末の同期は対象外です。
 
 ## なぜ作ったか
 
@@ -144,13 +146,19 @@ kinko run --env-file .env.tmpl -- your-command --flag
 | `kinko unlock setup [--dry-run] [--yes] [--replace]` | この端末の OS credential へ登録する |
 | `kinko unlock status` | provider、security level、binding、状態だけを表示する |
 | `kinko unlock disable [--dry-run] [--yes]` | この端末の credential だけを削除する |
+| `kinko backup status` | 手元の世代と PC 外の保存先の状態（未転送の件数など）を表示する |
+| `kinko backup list` | 手元の世代を新しい順に表示する |
+| `kinko backup add <場所>` / `remove <場所> [--yes]` | PC 外の保存先を登録する / 外す（写しは消さない） |
+| `kinko backup push` | 未転送の世代を保存先へ写す（`add`・`rm` の後は自動で 1 回試す） |
+| `kinko backup verify <場所>` | 保存先の写しを読み戻し、今のパスワードで開けるか確かめる |
+| `kinko backup restore <世代> <復元先>` | 世代を新しいファイルへ復元する（上書きしない） |
 | `kinko version` | バージョンを表示する |
 
 厳密な引数、別名、出力契約は [CLI reference](docs/reference_cli.md) を参照してください。
 
 ### 端末解除
 
-`add`、`get`、`list`、`rm`、`run`、`export` の source vault は、TTYで実行した場合に対応する
+`add`、`get`、`list`、`rm`、`run`、`export`、`backup` の source vault は、TTYで実行した場合に対応する
 OS providerを1回だけ試します。providerが取得した master password でvaultを開き、暗号化JSONの
 `vault_id`を照合します。照合に失敗した古いcredentialは、別のpasswordへ黙ってfallbackせず停止します。
 
@@ -252,6 +260,8 @@ network/sync filesystem、hard-link 別名、第三者による directory/lock �
 - 端末、ユーザーアカウント、実行中プロセス自体の侵害
 - マルウェア、管理者権限、メモリダンプ、OS の swap に対する完全な防御
 - チーム共有、権限分離、監査ログ、自動ローテーション、クラウド同期
+- パスワードを忘れたときの復旧（世代や PC 外の写しも同じパスワードで暗号化されています）
+- `rm` で消した値の完全な消去（世代や PC 外の写しには残ります。漏れた値は発行元で失効させてください）
 
 ## 開発
 
