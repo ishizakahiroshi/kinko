@@ -202,6 +202,11 @@ password違いまたはage暗号文の破損は、ageの制約上 `ErrWrongPassw
 future formatは更新を要求し、provider credentialのvault ID不一致はstale credentialとして
 停止する。これらを越える自動復旧、Google Drive API、cloud同期の監視はkinkoの責務ではない。
 
+予定（v0.1.0 で実装予定・現時点では未実装）: 変更前後の暗号文を原本のフォルダの外（OS の利用者データ領域）へ
+自動で世代保存し、利用者が指定した保存先（別媒体・別 PC）へ追記だけで転送する。転送先へ削除や整理を
+伝えず、復元は原本を上書きせず別の場所へ行う。外部サービスの account や token は kinko に持たせず、
+cloud sync・network service は引き続き持たない。実装されるまで、上の `export` が唯一の備えである。
+
 ## 脅威モデル
 
 ### 減らせるリスク
