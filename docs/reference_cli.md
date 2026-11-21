@@ -128,7 +128,8 @@ kinko run --env-file=.env.tmpl -- your-command --flag
   自動的に取り除く
 
 子環境は親環境を基にし、テンプレートで展開した項目を追加する。ただし
-`KINKO_PASSWORD` は、大小文字の違いを含めて親環境から除外する。
+`KINKO_PASSWORD` は、大小文字の違いを含めて親環境から除外する。親環境にテンプレートと同じ名前
+（Windows では大小文字だけ違う名前を含む）がある場合は、テンプレートの値が子へ渡る。
 
 ### `kinko export <出力先>`
 

@@ -171,6 +171,39 @@ func TestDailyWorkflowInSubprocesses(t *testing.T) {
 	}
 }
 
+// Audit A3: when the parent environment already has the same name as a
+// template line (including a different letter case, which Windows treats as
+// the same variable), the real child process must receive the template value,
+// not the stale parent value.
+func TestTemplateValueWinsOverParentEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "vault.age")
+	v, err := vault.Create(path, practicalPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Set("example-service/token", practicalValue); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Save(practicalPassword); err != nil {
+		t.Fatal(err)
+	}
+	template := filepath.Join(dir, "example.env")
+	if err := os.WriteFile(template, []byte("SYNTHETIC_TOKEN=${kinko:example-service/token}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := []string{"SYNTHETIC_TOKEN=stale-parent-value", "synthetic_token=stale-parent-lower"}
+	child := []string{"run", "--env-file", template, "--", executable, "-test.run=^TestPracticalCLIHelper$", "--", "child"}
+	out, diagnostic := runCLI(t, path, practicalPassword+"\nchild-input", stale, 23, child...)
+	if out != "child-stdout" || diagnostic != "child-stderr" {
+		t.Fatal("child did not receive the template value over the parent value")
+	}
+}
+
 func TestGetClosedStdoutFailsInSubprocess(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vault.age")
 	v, err := vault.Create(path, practicalPassword)

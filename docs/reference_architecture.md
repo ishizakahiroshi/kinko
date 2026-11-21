@@ -73,6 +73,8 @@ rename する。暗号文の書き込み途中で失敗したとき、既存フ�
 `KINKO_PASSWORD` は保管庫全体を開ける。`run` が渡す個別 secret より強いため、親環境に
 存在しても子環境から除外する。Windows の環境変数名は大文字小文字を区別しないため、
 除外とテンプレートの予約名判定は全 OS で case-insensitive に行う。
+親環境にテンプレートと同じ名前（Windows では大文字小文字だけ違う名前を含む）があるときは、
+テンプレートの値が子へ渡る（テンプレートの行を親環境の後ろに足し、`os/exec` が最後の値に寄せる）。
 
 ## データフロー
 
@@ -329,6 +331,7 @@ future formatは更新を要求し、provider credentialのvault ID不一致はs
 | Windowsのunsafe HWNDを採用しない | `TestSelectActiveApplicationWindowRejectsUnsafeCandidates`, `TestNoActiveApplicationWindowDoesNotInvokeConsentRequest` |
 | source / backupのvault ID継承 | `TestExportPreservesVaultID` |
 | 子へマスターパスワードを渡さない | `TestChildEnvironmentDoesNotInheritVaultPassword` |
+| 親環境の同じ名前よりテンプレートの値が子へ届く | `TestTemplateValueWinsOverParentEnvironment` |
 | テンプレートで予約変数を再注入させない | `TestExpandRejectsReservedPasswordVariable` |
 | テンプレートの 1 行の上限 | `TestExpandLineLengthLimit` |
 | 変更前後の世代と lineage | `TestGenerationsKeepEveryStepAndLinkLineage`, `TestLegacyVaultBaselineIsStored` |
