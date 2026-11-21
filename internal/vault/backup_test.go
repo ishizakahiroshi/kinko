@@ -148,6 +148,81 @@ func TestVerifyDestinationOpensTheLiveCopyAndDetectsDamage(t *testing.T) {
 	}
 }
 
+func symlinkOrSkip(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink is not available here: %v", err)
+	}
+}
+
+func TestVerifyDoesNotWriteThroughAPlantedLink(t *testing.T) {
+	v, _, d := newVaultWithDestination(t)
+	saveValue(t, v, "verified")
+	v.Push(time.Time{})
+
+	outside := filepath.Join(t.TempDir(), "unrelated.txt")
+	original := []byte("unrelated content that must survive")
+	if err := os.WriteFile(outside, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record := filepath.Join(v.destinationCollection(d), verifiedFileName)
+	_ = os.Remove(record)
+	symlinkOrSkip(t, outside, record)
+
+	if _, err := v.VerifyDestination(d, testPassword); err == nil {
+		t.Fatal("verify wrote its record through a planted link")
+	}
+	got, err := os.ReadFile(outside)
+	if err != nil || !bytes.Equal(got, original) {
+		t.Fatalf("file behind the planted link changed: %q, %v", got, err)
+	}
+}
+
+func TestLinkedBackupFolderIsNotUsed(t *testing.T) {
+	v, _, d := newVaultWithDestination(t)
+	sub := filepath.Join(d.Path, destinationSubdir)
+	elsewhere := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.Rename(sub, elsewhere); err != nil {
+		t.Fatal(err)
+	}
+	symlinkOrSkip(t, elsewhere, sub)
+
+	before := destinationFilesAt(t, filepath.Join(elsewhere, collectionName(v.doc.VaultID)))
+	saveValue(t, v, "after-link")
+	if r := v.Push(time.Time{}); !errors.Is(r[0].Err, ErrDestinationMismatch) {
+		t.Fatalf("push through a linked kinko-backup folder = %v, want mismatch", r[0].Err)
+	}
+	if _, err := v.VerifyDestination(d, testPassword); !errors.Is(err, ErrDestinationMismatch) {
+		t.Fatalf("verify through a linked kinko-backup folder = %v, want mismatch", err)
+	}
+	after := destinationFilesAt(t, filepath.Join(elsewhere, collectionName(v.doc.VaultID)))
+	if len(after) != len(before) {
+		t.Fatalf("files behind the link changed: %d -> %d", len(before), len(after))
+	}
+
+	root2 := filepath.Join(t.TempDir(), "second-drive")
+	if err := os.Mkdir(root2, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	symlinkOrSkip(t, elsewhere, filepath.Join(root2, destinationSubdir))
+	if _, err := v.AddDestination(root2); err == nil {
+		t.Fatal("add accepted a destination whose kinko-backup folder is a link")
+	}
+}
+
+func destinationFilesAt(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		out = append(out, e.Name())
+	}
+	return out
+}
+
 func TestRestoreWritesANewFileAndLeavesTheVault(t *testing.T) {
 	v, path, _ := newVaultWithDestination(t)
 	saveValue(t, v, "old-value")

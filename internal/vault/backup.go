@@ -112,6 +112,20 @@ func (v *Vault) destinationCollection(d Destination) string {
 	return filepath.Join(d.Path, destinationSubdir, collectionName(v.doc.VaultID))
 }
 
+// plainDir reports whether path is a real directory and not a symlink or
+// junction. A destination may be writable by others (a shared folder), so kinko
+// does not follow links inside the folders it owns there.
+func plainDir(path string) bool {
+	info, err := os.Lstat(path)
+	return err == nil && info.Mode().IsDir()
+}
+
+// plainCollection checks the folders kinko creates under the destination root.
+// The root itself may legitimately be a mount point or link chosen by the user.
+func (v *Vault) plainCollection(d Destination) bool {
+	return plainDir(filepath.Join(d.Path, destinationSubdir)) && plainDir(v.destinationCollection(d))
+}
+
 // AddDestination registers a destination in memory. The caller must Save to
 // keep it. The root must already exist: kinko never creates a missing drive's
 // mount point, so an unplugged drive cannot silently become a local folder.
@@ -136,6 +150,9 @@ func (v *Vault) AddDestination(path string) (Destination, error) {
 	col := v.destinationCollection(d)
 	if err := os.MkdirAll(col, 0o700); err != nil {
 		return Destination{}, fmt.Errorf("kinko: 保存先にフォルダを作れません: %w", err)
+	}
+	if !v.plainCollection(d) {
+		return Destination{}, errors.New("kinko: 保存先の kinko-backup フォルダがリンクになっているため使いません")
 	}
 	marker, err := readMarker(col)
 	if errors.Is(err, os.ErrNotExist) {
@@ -240,6 +257,9 @@ func (v *Vault) checkDestination(d Destination) (string, error) {
 		return "", ErrDestinationOffline
 	}
 	col := v.destinationCollection(d)
+	if !v.plainCollection(d) {
+		return "", ErrDestinationMismatch
+	}
 	marker, err := readMarker(col)
 	if err != nil || marker != d.Marker {
 		return "", ErrDestinationMismatch
@@ -492,10 +512,39 @@ func (v *Vault) VerifyDestination(d Destination, password string) (VerifyResult,
 		return result, fmt.Errorf("kinko: 保存先に壊れた世代が %d 件あります", result.Damaged)
 	}
 	record := newest[:12] + " " + time.Now().UTC().Format(time.RFC3339) + "\n"
-	if err := os.WriteFile(filepath.Join(col, verifiedFileName), []byte(record), 0o600); err != nil {
+	if err := writeVerifiedRecord(col, record); err != nil {
 		return result, fmt.Errorf("kinko: 確認結果を記録できません: %w", err)
 	}
 	return result, nil
+}
+
+// writeVerifiedRecord replaces the verification record without opening an
+// existing path. A link planted at that name is refused, and the record is
+// published by rename, which never follows a link at the final name, so a file
+// elsewhere cannot be truncated through the destination.
+func writeVerifiedRecord(col, record string) error {
+	final := filepath.Join(col, verifiedFileName)
+	if info, err := os.Lstat(final); err == nil && !info.Mode().IsRegular() {
+		return errors.New("保存先の確認記録が通常のファイルではありません")
+	}
+	tmp, err := os.CreateTemp(col, ".kinko-verified-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if _, err := io.WriteString(tmp, record); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, final)
 }
 
 // FindGeneration resolves a hash prefix (at least 8 hex characters) to a

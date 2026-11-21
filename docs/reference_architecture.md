@@ -206,6 +206,10 @@ CLI が stderr に 1 行の注意を出す。
 写すのは確定済みの世代だけで、新規の名前として追記し、削除・整理・上書きは伝えない。保存先に無い世代は手元の
 保持の整理から外す。ディスク識別は volume / filesystem の単位で、同じ物理ディスクの別 partition や、物理的に
 同じ場所に置いた媒体までは見分けられない（PC 外かどうかの最終確認は利用者に残る）。
+保存先は共有フォルダのように他人が書き込める場合があるため、kinko が作る `kinko-backup` と `<collection>` が
+symlink / junction になっていたら、登録・転送・確認のどれでも使わない（root 自体は利用者が選んだ mount point や
+link でもよい）。`verify` の記録 `.kinko-verified` は、既存のパスを開かずに一時 file から rename で置き換え、
+その名前に通常 file 以外があれば記録を拒否する。リンク先の別 file を切り詰める書き込みはしない。
 
 `add` / `rm` の後の自動転送は別 goroutine で行い、2 秒で待つのをやめる。待つのをやめた後に process が終わると、
 保存先に `.gen-*.tmp` が残ることがある（暗号文だけが入る）。`verify` は写しの hash を全件照合し、1 件を同じ password で
@@ -332,6 +336,7 @@ future formatは更新を要求し、provider credentialのvault ID不一致はs
 | 保持の整理と容量の上限 | `TestRetentionKeepsNewestCountWhenOld`, `TestRetentionKeepsEverythingWithinAge`, `TestRetentionNeverRemovesCandidatesOrPinned`, `TestCapacityStopsWritesButKeepsReads` |
 | PC 外への追記だけの転送・抜いた保存先の取り違え | `TestPushCopiesCommittedGenerationsAppendOnly`, `TestOfflineDestinationIsNotRecreatedAndProtectsGenerations` |
 | 保存先の確認・非上書きの復元 | `TestVerifyDestinationOpensTheLiveCopyAndDetectsDamage`, `TestRestoreWritesANewFileAndLeavesTheVault` |
+| 保存先に置かれたリンクを辿らない | `TestVerifyDoesNotWriteThroughAPlantedLink`, `TestLinkedBackupFolderIsNotUsed` |
 | 書き込みと転送の同時実行・時計の巻き戻り | `TestPushWhileWritingKeepsDestinationConsistent`, `TestClockRollbackDoesNotLoseGenerations` |
 | 製品の scrypt の強さ（test だけ下げる） | `TestProductionSaveKeepsDefaultScryptWorkFactor` |
 | backup command の一連操作と出力に値が出ない | `TestBackupCommandsEndToEnd`, `TestBackupOutputHasNoSecretValues` |
