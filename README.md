@@ -64,7 +64,7 @@ Releases の成果物は C コンパイラを使わずに作っています。�
 
 ### Go で入れる
 
-Go 1.25 は source の最低言語版です。日常利用には security patch を含む現在サポートされる安定版を推奨し、CI は Go 1.27.2 で検査します（2026-10-11 確認）。
+Go 1.26 は source の最低言語版です。日常利用には security patch を含む現在サポートされる安定版を推奨し、CI は Go 1.27.2 で検査します（2026-10-11 確認）。
 
 ```sh
 go install github.com/ishizakahiroshi/kinko@latest
