@@ -32,7 +32,7 @@ OS credentialへの保存、各OSの実機acceptance、版付きの release 公�
 
 | 分類 | 技術 |
 |---|---|
-| 言語 | Go 1.25.0 |
+| 言語 | Go 1.26.0 |
 | 暗号化 | `filippo.io/age` v1.3.1 |
 | 端末入力 | `golang.org/x/term` v0.45.0 |
 | Linux desktop credential | `github.com/godbus/dbus/v5` v5.2.2（Linux buildのみ） |
